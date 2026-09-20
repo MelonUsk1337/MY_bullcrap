@@ -46,6 +46,8 @@ Luckan: nästan inget av dem är byggt kring *en* fysisk gest + *en* absurd kund
 - **Matkriget** (#12): `game/matkrig.html` · https://claude.ai/artifact/1nc1T33eSbYHHW8jW9ubWu
 - **Fikapausen** (#16): `game/fika.html` · https://claude.ai/artifact/EBpR5g8QM9yuNeZTnVBiZK
 
+Utanför mat-temat, på förslaget "ironiskt spel på temat nysvensk": **Nummerlappen** (`game/nummerlappen.html` · https://claude.ai/artifact/DVJpdXki5eqKYoSBFVsfmv). Satiren riktas mot Sveriges oskrivna regler och byråkrati, sedd ur den nyanländes ögon, där nykomlingen är hjälten. Inga skämt som bygger på stereotyper om invandrare, det är en medveten linje.
+
 ## Tre att prototypa först (ursprunglig plan)
 
 1. **Matkriget** – starkast delat moment, återanvänder Sushi-kastets delade skärm, splat-mekaniken är billig och elak.

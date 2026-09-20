@@ -1,4 +1,4 @@
-# Prototyper – tio casual-spel för swipe, tap och vibration
+# Prototyper – elva casual-spel för swipe, tap och vibration
 
 Alla är enskilda HTML-sidor utan byggsteg. `lib/core.js` är det delade kärnbiblioteket (canvas, input, haptik, syntljud, effekter, seedad slump, menyer, delning). `lib/matter.min.js` (MIT) används bara av Jenga-huset.
 
@@ -13,6 +13,7 @@ Alla är enskilda HTML-sidor utan byggsteg. `lib/core.js` är det delade kärnbi
 | Fikapausen | `fika.html` | https://claude.ai/artifact/EBpR5g8QM9yuNeZTnVBiZK | Håll = doppa, ⇡ = ät; mjukare = mer poäng, går det av = plums; chefen | Turas om, 10 kex var, samma kex |
 | Matkriget | `matkrig.html` | https://claude.ai/artifact/1nc1T33eSbYHHW8jW9ubWu | ⇡/⇣ kasta, ⇠⇢ ducka; träff = splat över motståndarens halva; 5 träffar vinner | Delad skärm samtidigt, eller solo mot kocken (AI) |
 | Kebabspettet | `kebab.html` | https://claude.ai/artifact/1JmHU6D3cJUmvVg9usBgfJ | ⇣ skär i grillad fas (längd = tjocklek), fyll till linjen utan spill, ⇠⇢⇡ = sås | Turas om, 5 kebaber var, samma ordrar |
+| Nummerlappen | `nummerlappen.html` | https://claude.ai/artifact/DVJpdXki5eqKYoSBFVsfmv | Satir om Sveriges oskrivna regler, ur den nyanländes perspektiv: ⇠⇢ välj svar, ⇡ föreslå fika, ⇣ ta en nummerlapp; 38 situationer, förklaring vid fel | Kulturkrock: turas om, 15 situationer var, samma kort |
 | Sysslor (Chores) | `chores.html` | https://claude.ai/artifact/F8BthVPjQrCCbYaSyR29N6 | Fyra sysslor: gräs (snake-swipe), fönster (dra), tvätt (swipe-sortering), dammsuga (snake-swipe) | Två profiler, samma smuts per dag, hushållets poängtavla, städ-streak |
 
 Länkarna är privata artifacts. Dela från sidans Share-meny om fler ska testa. Alla spel har även "Dagens utmaning" (samma seed för alla) och "Utmana en vän" (länk med seed + poäng att slå).
@@ -44,7 +45,7 @@ game/
   index.html        nav till alla sex
   hangry.html       fristående (eget inbyggt kärnbibliotek, äldst)
   dorrvakten.html   sushi.html  jenga.html  tunnelbanan.html  chores.html
-  pannkaka.html     fika.html   matkrig.html  kebab.html
+  pannkaka.html     fika.html   matkrig.html  kebab.html  nummerlappen.html
   lib/core.js       delat kärnbibliotek
   lib/matter.min.js fysik (MIT, matter-js 0.20.0)
 ```
