@@ -283,8 +283,10 @@ canvas#c{display:block;width:100%;height:100%;touch-action:none}
     let last = performance.now();
     const loop = now => {
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
-      if (!g.paused) { g.t += dt; g.fx.update(dt); if (opts.update) opts.update(dt, g); }
-      if (opts.render) opts.render(ctx, g);
+      try {
+        if (!g.paused) { g.t += dt; g.fx.update(dt); if (opts.update) opts.update(dt, g); }
+        if (opts.render) { ctx.setTransform(canvas.width / g.W, 0, 0, canvas.height / g.H, 0, 0); opts.render(ctx, g); }
+      } catch (err) { if (!g._errLogged) { g._errLogged = true; console.error('frame error', err); } }
       requestAnimationFrame(loop);
     };
     g.start = () => { if (opts.onInit) opts.onInit(g); requestAnimationFrame(loop); };

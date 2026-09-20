@@ -39,7 +39,14 @@ Luckan: nästan inget av dem är byggt kring *en* fysisk gest + *en* absurd kund
 | 19 | **Världens längsta macka** | Co-op: två spelare i var sin ände bygger *en* macka mot mitten i rätt ordning | swipe mot mitten | Bussen kommer om 40 s; den som lägger fel får hela gänget att skratta | Samarbete på samma mobil, inte mot varandra | 1 | Overcooked-känsla |
 | 20 | **Ättävlingen** | Korvätartävling: tappa för att tugga, ⇣ svälj, ⇡ drick när "kvävmätaren" fylls | mash + ⇡⇣ | Domaren räknar, magen växer, sista korven är jättestor | Delad skärm-mash, först till tio | 0,5 | Button-mash-duell |
 
-## Tre att prototypa först
+## Byggda 2026-09-20
+
+- **Pannkakstornet** (#1): `game/pannkaka.html` · https://claude.ai/artifact/BYuVj92kSFqtgnuzPLYhZc
+- **Kebabspettet** (#3): `game/kebab.html` · https://claude.ai/artifact/1JmHU6D3cJUmvVg9usBgfJ
+- **Matkriget** (#12): `game/matkrig.html` · https://claude.ai/artifact/1nc1T33eSbYHHW8jW9ubWu
+- **Fikapausen** (#16): `game/fika.html` · https://claude.ai/artifact/EBpR5g8QM9yuNeZTnVBiZK
+
+## Tre att prototypa först (ursprunglig plan)
 
 1. **Matkriget** – starkast delat moment, återanvänder Sushi-kastets delade skärm, splat-mekaniken är billig och elak.
 2. **Pannkakstornet** – HANGRY-koden plus en vändtiming; två dopaminlopp i ett (vänta på gyllene, sedan stapla).
