@@ -116,7 +116,8 @@ window.Core = (() => {
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
   function text(ctx, str, x, y, size, color, align = 'center', font = F.display, stroke = true, strokeColor = 'rgba(20,12,40,.9)') {
-    ctx.font = size + 'px ' + font; ctx.textAlign = align; ctx.textBaseline = 'middle';
+    const m = /^(\d{3}|bold|normal)\s+(.*)$/.exec(font);
+    ctx.font = m ? m[1] + ' ' + size + 'px ' + m[2] : size + 'px ' + font; ctx.textAlign = align; ctx.textBaseline = 'middle';
     if (stroke) { ctx.lineWidth = Math.max(2, size / 7); ctx.lineJoin = 'round'; ctx.strokeStyle = strokeColor; ctx.strokeText(str, x, y); }
     ctx.fillStyle = color; ctx.fillText(str, x, y);
   }
