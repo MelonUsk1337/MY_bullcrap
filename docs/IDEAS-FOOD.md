@@ -39,6 +39,10 @@ Luckan: nästan inget av dem är byggt kring *en* fysisk gest + *en* absurd kund
 | 19 | **Världens längsta macka** | Co-op: två spelare i var sin ände bygger *en* macka mot mitten i rätt ordning | swipe mot mitten | Bussen kommer om 40 s; den som lägger fel får hela gänget att skratta | Samarbete på samma mobil, inte mot varandra | 1 | Overcooked-känsla |
 | 20 | **Ättävlingen** | Korvätartävling: tappa för att tugga, ⇣ svälj, ⇡ drick när "kvävmätaren" fylls | mash + ⇡⇣ | Domaren räknar, magen växer, sista korven är jättestor | Delad skärm-mash, först till tio | 0,5 | Button-mash-duell |
 
+## Samlingen: Food Wars (arbetsnamn)
+
+`game/foodwars.html` kör alla mat-mekaniker som mikrospel i en WarioWare-loop: verb-kort ("STAPLA!", "KASTA!", "VÄND!", "SKÄR!", "DOPPA!", "MATKRIG!", "SORTERA!", "HÄLL!"), 9–22 sekunder per rätt, fyra liv, tempot ökar 7 % per rätt, HANGRY är boss var sjätte rätt. Poäng = kvalitet 0–100 × (1 + 0,1 × rätt). Nya mekaniker läggs till som ett objekt med `start/update/render/onSwipe/onTap/timeout`. Namnet "Food Wars!" är den engelska titeln på animen Shokugeki no Soma, så det slutliga namnet bör vara ett annat, till exempel HANGRY KITCHEN eller KÖKSKRIGET.
+
 ## Byggda 2026-09-20
 
 - **Pannkakstornet** (#1): `game/pannkaka.html` · https://claude.ai/artifact/BYuVj92kSFqtgnuzPLYhZc

@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Food Wars</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@700;900&display=swap">
+<style>
+:root{--ground:#1B1430;--panel:rgba(22,15,40,.9);--cream:#FFF4DF;--dim:#B9A9CC;--accent:#FF4B3E;--accent-shadow:#A8261C;--btn-text:#FFFFFF;--card:#2A1E44;--card-dk:#1B1430;--line:#4A3A6A;--how-cols:3;color-scheme:dark}
+.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:360px}
+.chips span{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12px;font-weight:800;color:var(--dim)}
+</style>
+<script src="lib/core.js"></script>
+</head>
+<body>
+<div id="stage"><div id="box"><div id="frame">
+<div id="menu" class="ov">
+  <h1 class="logo" style="font-size:clamp(48px,16vw,72px)">FOOD WARS</h1>
+  <p class="sub">Nio mikrospel, ett kök, en hangry kund. Tio sekunder per rätt. Fyra liv. Tempot ökar. Var sjätte rätt är en boss.</p>
+  <div class="chips" aria-label="Mikrospel"><span>🍔 stapla</span><span>🍣 kasta</span><span>🥞 vänd</span><span>🥙 skär</span><span>☕ doppa</span><span>🍅 matkrig</span><span>🧊 sortera</span><span>🥤 häll</span><span>👹 boss</span></div>
+  <button class="btn" id="bPlay">TILL KÖKET</button>
+  <div class="row">
+    <button class="btn sec" id="bDaily">Dagens meny</button>
+    <button class="btn sec" id="bDuel">Duell · turas om</button>
+  </div>
+  <div class="row">
+    <button class="btn sec" id="bHap">Vibration: på</button>
+    <button class="btn sec" id="bSnd">Ljud: på</button>
+  </div>
+  <p class="small" id="bestLine"></p>
+  <p class="small" id="challengeLine" hidden></p>
+</div>
+<div id="over" class="ov" hidden>
+  <p class="tag" id="overTag">KÖKET STÄNGDE</p>
+  <p class="big" id="overScore">0</p>
+  <p class="sub" id="overSub"></p>
+  <button class="btn" id="bAgain">IGEN</button>
+  <div class="row">
+    <button class="btn sec" id="bShare">Utmana en vän</button>
+    <button class="btn sec" id="bMenu">Meny</button>
+  </div>
+  <input id="linkbox" class="linkbox" hidden readonly aria-label="Utmaningslänk">
+  <p class="small" id="overHint">Tryck var som helst för att köra igen</p>
+</div>
+<div id="toast" role="status"></div>
+</div></div></div>
+<script>
+(() => {
+'use strict';
+const C = Core, $ = C.$;
+const S = C.store('foodwars');
+C.haptics.on = S.get('haptics', true); C.audio.on = S.get('sound', true);
+const SKINS = ['#F5C6A0', '#C68642', '#8D5524', '#FFDBAC', '#E0AC69', '#B5E7A0', '#9AD0F5', '#F5A3C7'];
+const OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
+const ARROW = { left: '⇠', right: '⇢', up: '⇡', down: '⇣' };
+
+// ---------------------------------------------------------------- shared drawing
+function face(ctx, x, y, r, skin, mood = 0, look = 0) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = skin; ctx.fill(); ctx.lineWidth = Math.max(2, r / 14); ctx.strokeStyle = 'rgba(20,12,40,.5)'; ctx.stroke();
+  const e = r * 0.36, ey = y - r * 0.2;
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(x + s * e, ey, r * 0.16, r * 0.18, 0, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.beginPath(); ctx.arc(x + s * e + look * r * 0.06, ey + r * 0.04, r * 0.08, 0, Math.PI * 2); ctx.fillStyle = '#1B1430'; ctx.fill(); }
+  ctx.lineWidth = Math.max(2, r / 12); ctx.strokeStyle = '#1B1430'; ctx.beginPath();
+  if (mood > 0) ctx.arc(x, y + r * 0.25, r * 0.3, 0.1 * Math.PI, 0.9 * Math.PI); else if (mood < 0) ctx.arc(x, y + r * 0.55, r * 0.3, 1.1 * Math.PI, 1.9 * Math.PI); else ctx.arc(x, y + r * 0.3, r * 0.22, 0.2 * Math.PI, 0.8 * Math.PI);
+  ctx.stroke();
+}
+function bubble(ctx, text, x, y, size = 16) { const w = Math.min(g.W - 24, 30 + text.length * size * 0.62); x = C.clamp(x, w / 2 + 8, g.W - w / 2 - 8); C.rrect(ctx, x - w / 2, y - size - 6, w, size * 2 + 8, 12); ctx.fillStyle = '#FFF4DF'; ctx.fill(); C.text(ctx, text, x, y + 1, size, '#1B1430', 'center', C.F.display, false); }
+function bar(ctx, x, y, w, h, q, color) { C.rrect(ctx, x, y, w, h, h / 2); ctx.fillStyle = 'rgba(255,255,255,.15)'; ctx.fill(); if (q > 0) { C.rrect(ctx, x, y, w * C.clamp(q, 0, 1), h, h / 2); ctx.fillStyle = color; ctx.fill(); } }
+const mix = (a, b, t) => { const pa = a.match(/\w\w/g).map(h => parseInt(h, 16)), pb = b.match(/\w\w/g).map(h => parseInt(h, 16)); return 'rgb(' + pa.map((v, i) => Math.round(v + (pb[i] - v) * C.clamp(t, 0, 1))).join(',') + ')'; };
+
+// ---------------------------------------------------------------- micro-games
+// Each: { id, verb, emoji, hint, bg, dur, start(m), update(dt,m), render(ctx,m), onTap/onSwipe/onDown/onUp, timeout(m) }
+// m: { seed, rng, speed, t, timeLeft, timeMax, done(ok, score0to100, label) }
+
+const STAPLA = {
+  id: 'stapla', verb: 'STAPLA!', emoji: '🍔', hint: 'tap = släpp · ⇠⇢ = släng skräp', bg: '#2E1F4A', dur: 14,
+  start(m) { this.goal = 6; this.stack = []; this.fx = []; this.i = 0; this.W = 200; this.perf = 0; this.dead = false; this.spawn(m); },
+  spawn(m) { const n = this.stack.length, w = n ? this.stack[n - 1].w : this.W; const junk = n > 0 && n < this.goal - 1 && m.rng() < 0.28; const dir = m.rng() < 0.5 ? 1 : -1; this.p = { x: dir > 0 ? 8 : g.W - 8 - w, w, dir, speed: (200 + 14 * n) * m.speed, junk, emoji: junk ? C.pick(['🧦', '👟', '💣', '🐟']) : n === 0 || n === this.goal - 1 ? '🍞' : C.pick(['🥩', '🧀', '🥬', '🍅', '🥓']), color: junk ? '#5B6072' : n === 0 || n === this.goal - 1 ? '#E0A458' : C.pick(['#7B4A2D', '#FFD23F', '#62D26F', '#FF4B3E', '#C8553D']), state: 'swing', y: 0, vy: 0 }; },
+  topY() { return g.H - 130 - this.stack.length * 30; },
+  update(dt, m) {
+    const p = this.p; if (!p || this.dead) return;
+    if (p.state === 'swing') { p.x += p.dir * p.speed * dt; if (p.x < 8) { p.x = 8; p.dir = 1; } else if (p.x > g.W - 8 - p.w) { p.x = g.W - 8 - p.w; p.dir = -1; } p.y = this.topY() - 110; }
+    else if (p.state === 'fall') { p.vy += 3400 * dt; p.y += p.vy * dt; if (p.y >= this.topY() - 30) this.land(m); }
+    for (const f of this.fx) { f.t += dt; f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 1200 * dt; } this.fx = this.fx.filter(f => f.t < 1);
+  },
+  land(m) {
+    const p = this.p, n = this.stack.length;
+    if (p.junk) { this.dead = true; g.fx.text(g.W / 2, this.topY() - 60, 'BLÄ! SKRÄP!', '#FF4B3E', 28); C.haptics.fail(); C.audio.buzz(); m.done(false, 0, 'skräp i burgaren'); return; }
+    const ref = n ? this.stack[n - 1] : { x: (g.W - this.W) / 2, w: this.W }; const off = p.x - ref.x;
+    const left = Math.max(p.x, ref.x), right = Math.min(p.x + p.w, ref.x + ref.w), ov = right - left;
+    if (Math.abs(off) <= 9) { this.perf++; this.stack.push({ x: ref.x, w: ref.w, color: p.color, emoji: p.emoji }); g.fx.text(p.x + p.w / 2, this.topY() - 40, 'PERFEKT!', '#FFC145', 22); g.fx.ring(p.x + p.w / 2, this.topY(), '#FFC145'); C.haptics.success(this.perf); C.audio.blip(this.perf); }
+    else if (ov <= 0) { this.dead = true; g.fx.text(g.W / 2, this.topY() - 60, 'MISS!', '#FF4B3E', 30); C.haptics.fail(); C.audio.buzz(); m.done(false, 0, 'burgaren rasade'); return; }
+    else { this.fx.push({ x: off > 0 ? ref.x + ref.w : p.x, y: this.topY() - 30, w: Math.abs(off), vx: (off > 0 ? 1 : -1) * 120, vy: -60, t: 0, color: p.color }); this.stack.push({ x: left, w: ov, color: p.color, emoji: p.emoji }); C.haptics.light(); C.audio.thud(); }
+    this.p = null;
+    if (this.stack.length >= this.goal) { m.done(true, 60 + Math.round(40 * this.perf / this.goal), this.perf + ' perfekta'); return; }
+    this.spawn(m);
+  },
+  onTap(m) { const p = this.p; if (p && p.state === 'swing') { p.state = 'fall'; p.vy = 400; C.haptics.tap(); } },
+  onSwipe(dir, m) { const p = this.p; if (!p || p.state !== 'swing') return; if (dir === 'left' || dir === 'right') { if (p.junk) { g.fx.text(p.x + p.w / 2, p.y - 20, 'BORT!', '#62D26F', 20); C.haptics.medium(); C.audio.whoosh(); this.p = null; this.spawn(m); } else { g.fx.text(p.x + p.w / 2, p.y - 20, 'DET VAR MAT!', '#FF4B3E', 16); C.haptics.light(); } } else if (dir === 'down') this.onTap(m); },
+  timeout(m) { m.done(false, 0, 'för långsam'); },
+  render(ctx, m) {
+    ctx.fillStyle = this.bg; ctx.fillRect(0, 0, g.W, g.H);
+    ctx.fillStyle = '#1B1430'; ctx.fillRect(0, g.H - 116, g.W, 116);
+    ctx.beginPath(); ctx.ellipse(g.W / 2, g.H - 124, 130, 14, 0, 0, Math.PI * 2); ctx.fillStyle = '#FFF4DF'; ctx.fill();
+    C.text(ctx, this.stack.length + '/' + this.goal + ' LAGER', g.W / 2, g.H - 96, 16, '#FFF4DF');
+    this.stack.forEach((L, i) => { const y = g.H - 130 - (i + 1) * 30; C.rrect(ctx, L.x, y, L.w, 28, 7); ctx.fillStyle = L.color; ctx.fill(); if (L.w > 34) C.emoji(ctx, L.emoji, L.x + L.w / 2, y + 14, 20); });
+    for (const f of this.fx) { ctx.save(); ctx.globalAlpha = 1 - f.t; C.rrect(ctx, f.x, f.y, f.w, 28, 6); ctx.fillStyle = f.color; ctx.fill(); ctx.restore(); }
+    const p = this.p; if (p) { if (p.junk) { C.rrect(ctx, p.x - 6, p.y - 6, p.w + 12, 40, 10); ctx.fillStyle = 'rgba(255,75,62,' + (0.3 + 0.2 * Math.sin(m.t * 14)) + ')'; ctx.fill(); C.text(ctx, 'SKRÄP! ⇠⇢', p.x + p.w / 2, p.y - 22, 16, '#FF4B3E'); } C.rrect(ctx, p.x, p.y, p.w, 28, 7); ctx.fillStyle = p.color; ctx.fill(); C.emoji(ctx, p.emoji, p.x + p.w / 2, p.y + 14, 20); ctx.save(); ctx.globalAlpha = 0.15; C.rrect(ctx, p.x, this.topY() - 30, p.w, 28, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore(); }
+  },
+};
+
+const KASTA = {
+  id: 'kasta', verb: 'KASTA!', emoji: '🍣', hint: 'swipa tallriken till gästen som beställt', bg: '#2B1D14', dur: 12,
+  start(m) { this.items = ['🍣', '🍙', '🍤', '🥟', '🍵', '🍡']; this.seats = {}; const used = new Set(); for (const d of ['up', 'down', 'left', 'right']) { let w; do w = this.items[Math.floor(m.rng() * this.items.length)]; while (used.has(w)); used.add(w); this.seats[d] = { wish: w, mood: 0, moodT: 0, skin: SKINS[Math.floor(m.rng() * SKINS.length)] }; } this.goal = 5; this.served = 0; this.wrong = 0; this.flying = []; this.spawn(m); },
+  spawn(m) { const dirs = Object.keys(this.seats); this.target = dirs[Math.floor(m.rng() * 4)]; this.plate = { item: this.seats[this.target].wish, born: m.t }; this.timer = 2.2 / m.speed; },
+  pos(d) { const cx = g.W / 2, cy = g.H / 2 + 20; return d === 'up' ? { x: cx, y: cy - 150 } : d === 'down' ? { x: cx, y: cy + 150 } : d === 'left' ? { x: cx - 128, y: cy } : { x: cx + 128, y: cy }; },
+  update(dt, m) { for (const f of this.flying) f.t += dt * 4; this.flying = this.flying.filter(f => f.t < 1); for (const s of Object.values(this.seats)) if (s.moodT > 0) { s.moodT -= dt; if (s.moodT <= 0) s.mood = 0; } if (!this.plate) return; this.timer -= dt; if (this.timer <= 0) this.miss(m, 'KALLT!'); },
+  miss(m, why) { this.wrong++; this.plate = null; g.fx.text(g.W / 2, g.H / 2 - 40, why, '#E63946', 24); C.haptics.fail(); C.audio.buzz(); if (this.wrong >= 2) { m.done(false, 0, 'gästerna gick'); return; } this.spawn(m); },
+  onSwipe(dir, m) { if (!this.plate) return; const p = this.pos(dir); this.flying.push({ item: this.plate.item, x1: p.x, y1: p.y, t: 0 }); const s = this.seats[dir]; if (dir === this.target) { this.served++; s.mood = 1; s.moodT = 0.8; const used = new Set(Object.values(this.seats).map(x => x.wish)); let w; do w = this.items[Math.floor(m.rng() * this.items.length)]; while (used.has(w)); s.wish = w; g.fx.text(p.x, p.y - 50, 'ARIGATO!', '#62D26F', 18); g.fx.ring(p.x, p.y, '#62D26F'); C.haptics.success(this.served); C.audio.blip(this.served); this.plate = null; if (this.served >= this.goal) { m.done(true, 70 + 30 * Math.max(0, 1 - this.wrong), this.served + ' serverade'); return; } this.spawn(m); } else { s.mood = -1; s.moodT = 1; this.miss(m, 'FEL GÄST!'); } },
+  timeout(m) { m.done(this.served >= 3, Math.round(this.served / this.goal * 60), this.served + ' av ' + this.goal); },
+  render(ctx, m) {
+    ctx.fillStyle = this.bg; ctx.fillRect(0, 0, g.W, g.H); const cx = g.W / 2, cy = g.H / 2 + 20;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 96, 58, 0, 0, Math.PI * 2); ctx.fillStyle = '#8B5A2B'; ctx.fill(); ctx.beginPath(); ctx.ellipse(cx, cy, 84, 48, 0, 0, Math.PI * 2); ctx.fillStyle = '#A5713A'; ctx.fill();
+    for (const [d, s] of Object.entries(this.seats)) { const p = this.pos(d); face(ctx, p.x, p.y + 10, 30, s.skin, s.mood); const bx = p.x, by = p.y - 52; C.rrect(ctx, bx - 26, by - 22, 52, 44, 12); ctx.fillStyle = '#FFF6E5'; ctx.fill(); C.emoji(ctx, s.wish, bx, by, 28); }
+    for (const f of this.flying) { const k = C.easeOut(f.t), x = C.lerp(cx, f.x1, k), y = C.lerp(cy, f.y1, k) - Math.sin(k * Math.PI) * 30; ctx.beginPath(); ctx.arc(x, y, 20, 0, Math.PI * 2); ctx.fillStyle = '#FFF6E5'; ctx.fill(); C.emoji(ctx, f.item, x, y, 22); }
+    if (this.plate) { const q = Math.max(0, this.timer / (2.2 / m.speed)); ctx.beginPath(); ctx.arc(cx, cy, 40, 0, Math.PI * 2); ctx.fillStyle = '#FFF6E5'; ctx.fill(); C.emoji(ctx, this.plate.item, cx, cy, 36); ctx.beginPath(); ctx.arc(cx, cy, 46, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * q); ctx.lineWidth = 6; ctx.strokeStyle = q < 0.3 ? '#E63946' : '#62D26F'; ctx.stroke(); }
+    C.text(ctx, this.served + '/' + this.goal, cx, g.H - 60, 20, '#FFF6E5');
+  },
+};
+
+const VAND = {
+  id: 'vand', verb: 'VÄND!', emoji: '🥞', hint: 'swipa upp när markören är i guld', bg: '#3B2417', dur: 12,
+  start(m) { this.goal = 3; this.n = 0; this.bad = 0; this.q = []; this.cook = 2.4 / m.speed; this.d = 0; this.state = 'cook'; this.ft = 0; },
+  update(dt, m) { if (this.state === 'cook') { this.d += dt / this.cook; if (this.d >= 1) { this.judge(m, 'burnt'); } } else if (this.state === 'flip') { this.ft += dt / 0.45; if (this.ft >= 1) { this.n++; if (this.n >= this.goal) { const avg = this.q.reduce((a, b) => a + b, 0) / this.q.length; m.done(this.bad < 2, Math.round(avg * 100), this.q.filter(x => x >= 0.9).length + ' perfekta'); return; } this.d = 0; this.state = 'cook'; } } },
+  judge(m, how) { const d = this.d; let q, label, col; if (how === 'burnt' || d > 0.86) { q = 0; label = 'BRÄND!'; col = '#FF6B6B'; this.bad++; } else if (d < 0.45) { q = 0.2; label = 'RÅ!'; col = '#9AD0F5'; this.bad++; } else if (d >= 0.52 && d <= 0.64) { q = 1; label = 'PERFEKT!'; col = '#F2B84B'; } else { q = 0.6; label = 'OKEJ'; col = '#FFF6E3'; } this.q.push(q); g.fx.text(g.W / 2, g.H / 2 - 80, label, col, 26); if (q >= 1) { C.haptics.success(this.n + 1); C.audio.blip(this.n + 1); g.fx.ring(g.W / 2, g.H / 2 + 40, '#F2B84B'); } else if (q <= 0.2) { C.haptics.fail(); C.audio.buzz(); } else { C.haptics.medium(); C.audio.whoosh(); } if (this.bad >= 2) { m.done(false, 0, 'två kakor förstörda'); return; } this.state = 'flip'; this.ft = 0; this.d1 = d; },
+  onSwipe(dir, m) { if (dir === 'up' && this.state === 'cook') this.judge(m, 'flip'); },
+  onTap(m) {},
+  timeout(m) { m.done(false, 0, 'kakan brann'); },
+  render(ctx, m) {
+    ctx.fillStyle = this.bg; ctx.fillRect(0, 0, g.W, g.H); const cx = g.W / 2, cy = g.H / 2 + 60;
+    ctx.fillStyle = '#1E1E1E'; C.rrect(ctx, cx + 70, cy - 8, 90, 16, 8); ctx.fill(); ctx.beginPath(); ctx.ellipse(cx, cy, 96, 48, 0, 0, Math.PI * 2); ctx.fillStyle = '#2B2B2B'; ctx.fill(); ctx.beginPath(); ctx.ellipse(cx, cy, 84, 40, 0, 0, Math.PI * 2); ctx.fillStyle = '#3A3A3A'; ctx.fill();
+    const col = d => d < 0.45 ? '#F7E3B5' : d <= 0.72 ? mix('#F7E3B5', '#E0A241', (d - 0.45) / 0.27) : d < 0.86 ? mix('#E0A241', '#8A5A1B', (d - 0.72) / 0.14) : '#3B2612';
+    if (this.state === 'cook') { ctx.beginPath(); ctx.ellipse(cx, cy - 6, 62, 30, 0, 0, Math.PI * 2); ctx.fillStyle = col(this.d); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.5)'; for (let k = 0; k < 6; k++) { ctx.beginPath(); ctx.arc(cx + Math.cos(k * 1.9) * 30, cy - 6 + Math.sin(k * 1.9) * 14, 2 + (1 - this.d) * 3, 0, Math.PI * 2); ctx.fill(); } }
+    else { const k = this.ft, h = Math.sin(k * Math.PI) * 120, sy = Math.abs(Math.cos(k * Math.PI)); ctx.beginPath(); ctx.ellipse(cx, cy - 6 - h, 62, 30 * Math.max(0.1, sy), 0, 0, Math.PI * 2); ctx.fillStyle = col(this.d1); ctx.fill(); }
+    const bx = 40, by = cy - 200, bh = 170, d = this.state === 'cook' ? this.d : this.d1;
+    C.rrect(ctx, bx - 2, by - 2, 24, bh + 4, 8); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
+    const seg = (a, b, c) => { ctx.fillStyle = c; ctx.fillRect(bx, by + bh * (1 - b), 20, bh * (b - a)); };
+    seg(0, 0.45, '#F7E3B5'); seg(0.45, 0.72, '#E0A241'); seg(0.52, 0.64, '#F2B84B'); seg(0.72, 0.86, '#8A5A1B'); seg(0.86, 1, '#3B2612');
+    const my = by + bh * (1 - d); ctx.fillStyle = '#FFF6E3'; ctx.beginPath(); ctx.moveTo(bx + 26, my); ctx.lineTo(bx + 38, my - 7); ctx.lineTo(bx + 38, my + 7); ctx.fill();
+    C.text(ctx, '⇡ I GULD', bx + 12, by - 18, 14, '#FFF6E3'); C.text(ctx, (this.n) + '/' + this.goal + ' KAKOR', cx, g.H - 60, 20, '#FFF6E3');
+  },
+};
+
+const SKAR = {
+  id: 'skar', verb: 'SKÄR!', emoji: '🥙', hint: '⇣ när spettet är grillat · fyll till linjen · ⇠⇢⇡ sås', bg: '#241612', dur: 14,
+  start(m) { this.target = 90 + Math.floor(m.rng() * 4) * 10; this.fill = 0; this.slices = []; this.falling = []; this.phase = m.rng(); this.period = 2.2 / m.speed; this.state = 'cut'; this.sauce = ['left', 'right', 'up'][Math.floor(m.rng() * 3)]; this.cd = 0; this.perf = 0; this.raw = 0; this.spills = 0; this.pending = null; },
+  cooked() { return this.phase >= 0.3 && this.phase <= 0.7; },
+  update(dt, m) { this.phase = (this.phase + dt / this.period) % 1; if (this.cd > 0) this.cd -= dt; for (const f of this.falling) { f.t += dt; f.y += (300 + f.t * 900) * dt; if (f.y >= g.H - 160 - this.fill * 0.8) { f.done = true; this.land(f, m); } } this.falling = this.falling.filter(f => !f.done); },
+  cut(len, m) { if (this.state !== 'cut' || this.cd > 0) return; this.cd = 0.28; const thick = C.clamp(Math.round(len / 3), 8, 40), raw = !this.cooked(), perfect = this.phase >= 0.44 && this.phase <= 0.56; this.falling.push({ y: 190, t: 0, thick, raw, perfect }); C.haptics.medium(); C.audio.noise(0.12, 0.2, 2500); },
+  land(f, m) { if (f.raw) { this.raw++; g.fx.text(g.W / 2 - 40, g.H - 250, 'RÅTT!', '#FF6B6B', 26); C.haptics.fail(); C.audio.buzz(); if (this.raw >= 2) m.done(false, 0, 'rått kött'); return; } this.fill += f.thick; this.slices.push(f); if (f.perfect) this.perf++; if (this.fill > this.target * 1.1) { this.spills++; g.fx.text(g.W / 2 - 40, g.H - 250, 'SPILL!', '#FF6B6B', 26); C.haptics.fail(); C.audio.splash(); this.fill = 0; this.slices = []; if (this.spills >= 2) m.done(false, 0, 'spill'); return; } C.haptics.tick(); C.audio.tone(200 + this.fill * 2, 0.08, 'triangle', 0.08); if (this.fill >= this.target * 0.95) { this.state = 'sauce'; C.haptics.light(); C.audio.ding(); } },
+  onSwipe(dir, m, s) { if (dir === 'down') { if (this.state === 'cut') { if (s && s.key) this.cut(90, m); else this.pending = s.id; } } else if (this.state === 'sauce') { const ok = dir === this.sauce, acc = Math.max(0, 1 - Math.abs(this.fill - this.target) / (this.target * 0.1)); g.fx.text(g.W / 2 - 40, g.H - 270, ok ? 'SERVERAD!' : 'FEL SÅS, MEN OK', ok ? '#FF7A1A' : '#FFF3E0', 24); if (ok) { C.haptics.success(2); C.audio.chord(); } else C.audio.pop(); m.done(true, Math.round(50 * acc + (ok ? 30 : 0) + 20 * Math.min(1, this.perf / 3)), ok ? 'rätt sås' : 'fel sås'); } },
+  onUp(x, y, s, m) { if (this.pending === s.id) { this.pending = null; this.cut(Math.max(22, Math.abs(y - s.sy)), m); } },
+  timeout(m) { m.done(false, 0, 'kunden gick'); },
+  render(ctx, m) {
+    ctx.fillStyle = this.bg; ctx.fillRect(0, 0, g.W, g.H); const sx = g.W / 2 - 40, top = 130, bot = g.H * 0.5;
+    ctx.fillStyle = '#FF7A1A'; C.rrect(ctx, sx + 68, top - 10, 22, bot - top + 20, 8); ctx.fill();
+    const ph = this.phase, cook = this.cooked() ? 1 - Math.abs(ph - 0.5) / 0.2 * 0.5 : 0, rows = 18, rh = (bot - top) / rows;
+    for (let r = 0; r < rows; r++) { const y = top + r * rh, wT = 84 - r * 1.8, wB = 84 - (r + 1) * 1.8; const base = cook > 0 ? mix('#E9A07A', '#7A3E1A', cook) : '#E9A07A'; ctx.fillStyle = (r + Math.floor(ph * 8)) % 2 ? base : mix(base, '#000000', 0.15); ctx.beginPath(); ctx.moveTo(sx - wT / 2, y); ctx.lineTo(sx + wT / 2, y); ctx.lineTo(sx + wB / 2, y + rh + 1); ctx.lineTo(sx - wB / 2, y + rh + 1); ctx.closePath(); ctx.fill(); }
+    ctx.fillStyle = '#555'; ctx.fillRect(sx - 4, top - 40, 8, bot - top + 60);
+    C.text(ctx, this.state === 'sauce' ? 'SÅS: ⇠ MILD  ⇡ ALLT  ⇢ STARK' : this.cooked() ? (ph >= 0.44 && ph <= 0.56 ? 'PERFEKT NU! ⇣' : 'GRILLAD ⇣') : 'VÄNTA…', g.W / 2, top - 62, this.state === 'sauce' ? 15 : 18, this.cooked() || this.state === 'sauce' ? '#FF7A1A' : '#D9B99B');
+    for (const f of this.falling) { ctx.fillStyle = f.raw ? '#E9A07A' : '#7A3E1A'; C.rrect(ctx, sx - 40, f.y - f.thick / 2, 80, f.thick, 4); ctx.fill(); }
+    const px = sx, py = g.H - 140; ctx.fillStyle = '#E8C37E'; ctx.beginPath(); ctx.moveTo(px - 90, py); ctx.quadraticCurveTo(px - 100, py - 140, px, py - 140); ctx.quadraticCurveTo(px + 100, py - 140, px + 90, py); ctx.closePath(); ctx.fill();
+    let fy = py - 8; for (const sl of this.slices) { const h = sl.thick * 0.8; fy -= h; ctx.fillStyle = '#7A3E1A'; C.rrect(ctx, px - 60, fy, 120, h - 1, 4); ctx.fill(); }
+    const lineY = py - 8 - this.target * 0.8; ctx.setLineDash([6, 5]); ctx.strokeStyle = '#FFF3E0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px - 100, lineY); ctx.lineTo(px + 100, lineY); ctx.stroke(); ctx.setLineDash([]);
+    C.text(ctx, Math.round(this.fill / this.target * 100) + '%', px, py + 18, 16, '#FFF3E0');
+    face(ctx, g.W - 60, g.H * 0.5, 44, '#E0AC69', this.state === 'sauce' ? 1 : 0); bubble(ctx, this.state === 'sauce' ? { left: 'MILD!', right: 'STARK!', up: 'ALLT!' }[this.sauce] : 'TILL LINJEN', g.W - 60, g.H * 0.5 - 70, 14);
+  },
+};
+
+const DOPPA = {
+  id: 'doppa', verb: 'DOPPA!', emoji: '☕', hint: 'håll = doppa · ⇡ = ät · går det av är det plums', bg: '#2A2320', dur: 11,
+  start(m) { this.goal = 2; this.n = 0; this.broke = 0; this.q = []; this.next(m); },
+  next(m) { const T = [1.4, 1.8, 2.2][Math.floor(m.rng() * 3)] * (0.85 + 0.3 * m.rng()) / m.speed; this.k = { T, s: 0, state: 'idle', y: 0, t: 0, window: 0, name: ['MARIEKEX', 'BALLERINA', 'DIGESTIVE'][Math.floor(m.rng() * 3)] }; },
+  update(dt, m) { const k = this.k; if (!k) return; k.t += dt; if (k.state === 'dunk') { k.y = Math.min(1, k.y + dt * 7); k.s += dt * k.y; if (k.s >= k.T) this.fail(m, 'PLUMS!'); else if (Math.floor(k.s * 8) !== Math.floor((k.s - dt) * 8)) C.haptics.tick(); } else if (k.state === 'lifted') { k.y = Math.max(0, k.y - dt * 7); if (k.t >= k.window) this.fail(m, 'DET GICK AV!'); } else if (k.state === 'idle') k.y = Math.max(0, k.y - dt * 7); },
+  fail(m, why) { this.broke++; this.q.push(0); g.fx.text(g.W / 2, g.H / 2 - 60, why, '#FF6B6B', 30); C.haptics.fail(); C.audio.splash(); this.n++; if (this.broke >= 2) { m.done(false, 0, 'två kex i kaffet'); return; } if (this.n >= this.goal) this.finish(m); else this.next(m); },
+  finish(m) { const avg = this.q.reduce((a, b) => a + b, 0) / this.q.length; m.done(true, Math.round(avg * 100), Math.round(avg * 100) + '% mjukt'); },
+  eat(m) { const k = this.k; if (!k || (k.state !== 'lifted' && k.state !== 'dunk')) return; const r = k.s / k.T; this.q.push(r); k.state = 'idle'; g.fx.text(g.W / 2, g.H / 2 - 60, r >= 0.9 ? 'PERFEKT DOPP!' : r >= 0.5 ? Math.round(r * 100) + '% MJUKT' : 'TORRT. FEG.', r >= 0.9 ? '#C8873E' : '#FFF3E0', 24); if (r >= 0.9) { C.haptics.success(2); C.audio.blip(3); } else { C.haptics.medium(); C.audio.crunch(); } this.n++; if (this.n >= this.goal) this.finish(m); else this.next(m); },
+  onDown(x, y, s, m) { const k = this.k; if (k && k.state === 'idle') { k.state = 'dunk'; k.t = 0; C.haptics.light(); C.audio.splash(); } },
+  onUp(x, y, s, m) { const k = this.k; if (k && k.state === 'dunk' && !s.swiped) { k.state = 'lifted'; k.t = 0; k.window = Math.max(0.3, 1.5 * (1 - k.s / k.T)); } },
+  onSwipe(dir, m) { if (dir === 'up') this.eat(m); },
+  timeout(m) { m.done(this.n >= 1 && this.broke === 0, Math.round((this.q.reduce((a, b) => a + b, 0) / Math.max(1, this.q.length)) * 60), 'tiden gick'); },
+  render(ctx, m) {
+    ctx.fillStyle = this.bg; ctx.fillRect(0, 0, g.W, g.H); const cx = g.W / 2, cy = g.H * 0.6, k = this.k;
+    ctx.beginPath(); ctx.arc(cx, 130, 62, 0, Math.PI * 2); ctx.fillStyle = '#F5C6A0'; ctx.fill(); ctx.beginPath(); ctx.ellipse(cx, 178, 28, k && k.state === 'lifted' ? 20 : 11, 0, 0, Math.PI * 2); ctx.fillStyle = '#5A0F1A'; ctx.fill();
+    ctx.fillStyle = '#FFF3E0'; C.rrect(ctx, cx - 100, cy, 200, 130, 22); ctx.fill(); ctx.beginPath(); ctx.ellipse(cx, cy, 100, 22, 0, 0, Math.PI * 2); ctx.fillStyle = '#E7D8C0'; ctx.fill(); ctx.beginPath(); ctx.ellipse(cx, cy, 88, 16, 0, 0, Math.PI * 2); ctx.fillStyle = '#3B2417'; ctx.fill();
+    if (k) { const ratio = Math.min(1, k.s / k.T), y = C.lerp(cy - 140, cy - 30, k.y), bend = ratio * 0.4; ctx.save(); ctx.translate(cx, y); ctx.transform(1, 0, bend * (k.state === 'lifted' ? 1 : 0.3), 1, 0, 0); C.rrect(ctx, -40, -50, 80, 100, 12); ctx.fillStyle = '#C8873E'; ctx.fill(); ctx.save(); C.rrect(ctx, -40, -50, 80, 100, 12); ctx.clip(); ctx.fillStyle = 'rgba(40,20,5,' + (0.7 * ratio) + ')'; ctx.fillRect(-40, 50 - 100 * ratio, 80, 100); ctx.restore(); ctx.restore(); ctx.fillStyle = '#F5C6A0'; C.rrect(ctx, cx - 12, y - 110, 24, 62, 10); ctx.fill();
+      bar(ctx, 30, cy - 200, 16, 180, 0, '#000'); ctx.fillStyle = ratio > 0.85 ? '#FF6B6B' : '#C8873E'; ctx.fillRect(32, cy - 20 - 176 * ratio, 12, 176 * ratio); ctx.fillStyle = 'rgba(255,243,224,.7)'; ctx.fillRect(28, cy - 20 - 176 * 0.9, 20, 2);
+      C.text(ctx, k.name, cx, cy - 230, 20, '#FFF3E0'); if (k.state === 'lifted') { bar(ctx, cx - 50, cy - 260, 100, 8, 1 - k.t / k.window, '#C8873E'); C.text(ctx, '⇡ ÄT!', cx, cy - 276, 16, '#FFF3E0'); } }
+    C.text(ctx, this.n + '/' + this.goal + ' KEX', cx, g.H - 40, 18, '#FFF3E0');
+  },
+};
+
+const MATKAST = {
+  id: 'matkast', verb: 'MATKRIG!', emoji: '🍅', hint: '⇡ kasta · ⇠⇢ ducka · träffa kocken 3 gånger', bg: '#1E1B2E', dur: 15,
+  start(m) { this.lanes = [-110, 0, 110]; this.me = { lane: 1, x: g.W / 2, hits: 0, cool: 0, hitT: 0 }; this.ai = { lane: 1, x: g.W / 2, hits: 0, cool: 0, hitT: 0, t: 0.8, moveT: 0 }; this.shots = []; this.splats = []; this.foods = ['🍅', '🥚', '🎂', '🫛']; },
+  update(dt, m) {
+    for (const p of [this.me, this.ai]) { p.x += (g.W / 2 + this.lanes[p.lane] - p.x) * Math.min(1, dt * 14); if (p.cool > 0) p.cool -= dt; if (p.hitT > 0) p.hitT -= dt; }
+    const ai = this.ai; ai.t -= dt; if (ai.moveT > 0) ai.moveT -= dt;
+    const inc = this.shots.find(s => s.from === 0 && s.t / s.dur > 0.45 && Math.abs(s.x - ai.x) < 60); if (inc && ai.moveT <= 0 && Math.random() < 0.5 * m.speed * dt * 6) { ai.lane = C.clamp(ai.lane + (ai.lane === 0 ? 1 : ai.lane === 2 ? -1 : (Math.random() < 0.5 ? -1 : 1)), 0, 2); ai.moveT = 0.45; }
+    if (ai.t <= 0) { ai.t = (0.9 + Math.random() * 0.6) / m.speed; if (ai.lane !== this.me.lane && Math.random() < 0.6) { ai.lane += this.me.lane > ai.lane ? 1 : -1; ai.t = 0.35; } else this.throw(ai, 1, m); }
+    for (const s of this.shots) { s.t += dt; s.rot += dt * 10; if (s.t >= s.dur) { s.done = true; this.arrive(s, m); } } this.shots = this.shots.filter(s => !s.done);
+    for (const sp of this.splats) sp.t += dt; this.splats = this.splats.filter(sp => sp.t < sp.dur);
+  },
+  throw(p, from, m) { if (p.cool > 0) return; p.cool = 0.7 / m.speed; this.shots.push({ from, x: p.x, y0: from === 0 ? g.H * 0.8 : g.H * 0.22, y1: from === 0 ? g.H * 0.22 : g.H * 0.8, t: 0, dur: 0.55, rot: 0, e: C.pick(this.foods) }); C.haptics.light(); C.audio.whoosh(); },
+  arrive(s, m) { const target = s.from === 0 ? this.ai : this.me; if (Math.abs(target.x - s.x) < 46) { target.hits++; target.hitT = 0.7; this.splats.push({ x: 40 + Math.random() * (g.W - 80), y: (s.from === 0 ? 20 : g.H / 2 + 20) + Math.random() * (g.H / 2 - 60), r: 90, t: 0, dur: 2, color: s.from === 0 ? 'rgba(98,210,111,.85)' : 'rgba(230,57,70,.85)' }); g.fx.text(target.x, s.y1 + (s.from === 0 ? 80 : -80), 'SPLAT!', '#FFF7EC', 30); g.fx.shake = 12; C.haptics.big(); C.audio.splash(); if (this.ai.hits >= 3) m.done(true, 70 + Math.round(30 * (1 - this.me.hits / 3)), 'kocken fick ' + this.ai.hits); else if (this.me.hits >= 3) m.done(false, 0, 'du fick tårta i ansiktet'); } else C.audio.pop(); },
+  onTap(m) { this.throw(this.me, 0, m); },
+  onSwipe(dir, m) { if (dir === 'up') this.throw(this.me, 0, m); else if (dir === 'left' || dir === 'right') { this.me.lane = C.clamp(this.me.lane + (dir === 'left' ? -1 : 1), 0, 2); C.haptics.tick(); } },
+  timeout(m) { m.done(this.ai.hits > this.me.hits, Math.round(this.ai.hits / 3 * 60), this.ai.hits + ' – ' + this.me.hits); },
+  render(ctx, m) {
+    ctx.fillStyle = this.bg; ctx.fillRect(0, 0, g.W, g.H); ctx.fillStyle = '#26223A'; for (let y = 0; y < g.H; y += 40) for (let x = (y / 40) % 2 * 40; x < g.W; x += 80) ctx.fillRect(x, y, 40, 40);
+    ctx.fillStyle = '#8B5A2B'; ctx.fillRect(0, g.H / 2 - 14, g.W, 28);
+    const draw = (p, y, chef) => { face(ctx, p.x, y, 44, chef ? '#C68642' : '#F5C6A0', p.hitT > 0 ? -1 : 0); if (chef) { ctx.fillStyle = '#FFF7EC'; C.rrect(ctx, p.x - 28, y - 70, 56, 26, 6); ctx.fill(); ctx.beginPath(); ctx.arc(p.x - 14, y - 70, 12, 0, Math.PI * 2); ctx.arc(p.x + 14, y - 70, 12, 0, Math.PI * 2); ctx.arc(p.x, y - 76, 14, 0, Math.PI * 2); ctx.fill(); } };
+    draw(this.ai, g.H * 0.22, true); draw(this.me, g.H * 0.8, false);
+    for (const s of this.shots) { const k = s.t / s.dur, y = C.lerp(s.y0, s.y1, k) - Math.sin(k * Math.PI) * 30; ctx.save(); ctx.translate(s.x, y); ctx.rotate(s.rot); C.emoji(ctx, s.e, 0, 0, 34 + Math.sin(k * Math.PI) * 12); ctx.restore(); }
+    for (const sp of this.splats) { const a = sp.t < 1.4 ? 1 : 1 - (sp.t - 1.4) / 0.6; ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = sp.color; ctx.beginPath(); ctx.arc(sp.x, sp.y, sp.r * 0.5, 0, Math.PI * 2); ctx.fill(); for (let n = 0; n < 5; n++) { ctx.beginPath(); ctx.arc(sp.x + Math.cos(n * 1.26) * sp.r * 0.42, sp.y + Math.sin(n * 1.26) * sp.r * 0.42, sp.r * 0.18, 0, Math.PI * 2); ctx.fill(); } ctx.restore(); }
+    C.text(ctx, 'KOCKEN ' + '💥'.repeat(this.ai.hits) + '○'.repeat(3 - this.ai.hits), g.W - 16, 70, 14, '#FFF7EC', 'right'); C.text(ctx, 'DU ' + '💥'.repeat(this.me.hits) + '○'.repeat(3 - this.me.hits), g.W - 16, g.H - 40, 14, '#FFF7EC', 'right');
+  },
+};
+
+const SORTERA = {
+  id: 'sortera', verb: 'SORTERA!', emoji: '🧊', hint: '⇠ kyl · ⇡ frys · ⇢ skafferi · ⇣ sopor', bg: '#1F2A22', dur: 12,
+  start(m) { const pool = [['🥛', 'left'], ['🧀', 'left'], ['🥚', 'left'], ['🥕', 'left'], ['🍦', 'up'], ['🧊', 'up'], ['🍝', 'right'], ['🍚', 'right'], ['🥫', 'right'], ['🍪', 'right'], ['🤢', 'down'], ['🦠', 'down'], ['🪱', 'down']]; this.items = []; for (let i = 0; i < 8; i++) this.items.push(pool[Math.floor(m.rng() * pool.length)]); this.i = 0; this.wrong = 0; this.right = 0; this.timer = 2.4 / m.speed; this.leaving = null; },
+  update(dt, m) { if (this.leaving) { this.leaving.t += dt; if (this.leaving.t > 0.4) this.leaving = null; } if (this.i >= this.items.length) return; this.timer -= dt; if (this.timer <= 0) this.answer(null, m); },
+  answer(dir, m) { const it = this.items[this.i]; const ok = dir === it[1]; this.leaving = { e: it[0], dir: dir || 'down', t: 0 }; if (ok) { this.right++; g.fx.text(g.W / 2, g.H / 2 - 90, '+', '#62D26F', 24); C.haptics.success(this.right); C.audio.blip(this.right); } else { this.wrong++; g.fx.text(g.W / 2, g.H / 2 - 90, dir ? 'FEL! ' + ARROW[it[1]] : 'FÖR LÅNGSAM', '#FF6B6B', 22); C.haptics.fail(); C.audio.buzz(); if (this.wrong >= 2) { m.done(false, 0, 'två fel'); return; } } this.i++; this.timer = 2.4 / m.speed; if (this.i >= this.items.length) m.done(true, 60 + 40 * (1 - this.wrong), this.right + ' rätt'); },
+  onSwipe(dir, m) { if (this.i < this.items.length) this.answer(dir, m); },
+  timeout(m) { m.done(false, 0, 'för långsam'); },
+  render(ctx, m) {
+    ctx.fillStyle = this.bg; ctx.fillRect(0, 0, g.W, g.H); const cx = g.W / 2, cy = g.H / 2;
+    const zone = (x, y, w, h, label, col) => { C.rrect(ctx, x, y, w, h, 14); ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = col; ctx.stroke(); C.text(ctx, label, x + w / 2, y + h / 2, 16, col); };
+    zone(12, cy - 60, 70, 120, '⇠ KYL', '#9AD0F5'); zone(g.W - 82, cy - 60, 70, 120, 'SKAFF ⇢', '#FFD166'); zone(cx - 80, 100, 160, 44, '⇡ FRYS', '#B5E7A0'); zone(cx - 80, g.H - 110, 160, 44, '⇣ SOPOR', '#FF6B6B');
+    if (this.i < this.items.length) { const it = this.items[this.i]; C.rrect(ctx, cx - 70, cy - 70, 140, 140, 20); ctx.fillStyle = '#FFF8EC'; ctx.fill(); C.emoji(ctx, it[0], cx, cy, 80); bar(ctx, cx - 60, cy - 90, 120, 8, this.timer / (2.4 / m.speed), '#62D26F'); }
+    if (this.leaving) { const l = this.leaving, d = l.dir, k = l.t / 0.4, dx = d === 'left' ? -k * 300 : d === 'right' ? k * 300 : 0, dy = d === 'up' ? -k * 300 : d === 'down' ? k * 300 : 0; ctx.save(); ctx.globalAlpha = 1 - k; C.emoji(ctx, l.e, cx + dx, cy + dy, 60); ctx.restore(); }
+    C.text(ctx, this.i + '/' + this.items.length, cx, g.H - 50, 16, '#FFF8EC');
+  },
+};
+
+const HALL = {
+  id: 'hall', verb: 'HÄLL!', emoji: '🥤', hint: 'håll för att hälla · släpp exakt vid linjen', bg: '#14213D', dur: 9,
+  start(m) { this.goal = 2; this.n = 0; this.q = []; this.next(m); },
+  next(m) { this.line = 0.55 + m.rng() * 0.3; this.level = 0; this.pouring = false; this.rate = (0.28 + 0.1 * m.rng()) * m.speed; this.color = C.pick(['#FF7A1A', '#FFD23F', '#E63946', '#7B4A2D']); this.doneOne = false; },
+  update(dt, m) { if (this.doneOne) return; if (this.pouring) { this.level += this.rate * dt; if (this.level >= 1.02) { this.pouring = false; this.doneOne = true; this.q.push(0); g.fx.text(g.W / 2, g.H / 2 - 120, 'DET RANN ÖVER!', '#FF6B6B', 26); C.haptics.fail(); C.audio.splash(); this.n++; setTimeout(() => this.after(m), 500); } else if (Math.floor(this.level * 20) !== Math.floor((this.level - this.rate * dt) * 20)) C.haptics.tick(); } },
+  after(m) { if (this.n >= this.goal) { const avg = this.q.reduce((a, b) => a + b, 0) / this.q.length; m.done(avg > 0.3, Math.round(avg * 100), Math.round(avg * 100) + '% pricksäkert'); } else this.next(m); },
+  onDown(x, y, s, m) { if (!this.doneOne && !this.pouring) { this.pouring = true; C.audio.noise(0.3, 0.1, 600); } },
+  onUp(x, y, s, m) { if (this.pouring) { this.pouring = false; this.doneOne = true; const err = Math.abs(this.level - this.line), q = Math.max(0, 1 - err / 0.12); this.q.push(q); g.fx.text(g.W / 2, g.H / 2 - 120, q >= 0.9 ? 'PERFEKT!' : q >= 0.5 ? 'NÄRA' : this.level < this.line ? 'FÖR LITE' : 'FÖR MYCKET', q >= 0.9 ? '#FFD23F' : '#FFF4DF', 26); if (q >= 0.9) { C.haptics.success(2); C.audio.blip(3); } else { C.haptics.medium(); C.audio.pop(); } this.n++; setTimeout(() => this.after(m), 500); } },
+  onSwipe() {},
+  timeout(m) { m.done(false, 0, 'kunden törstade ihjäl'); },
+  render(ctx, m) {
+    ctx.fillStyle = this.bg; ctx.fillRect(0, 0, g.W, g.H); const cx = g.W / 2, top = 200, h = 300, w = 150;
+    ctx.fillStyle = 'rgba(255,255,255,.1)'; C.rrect(ctx, cx - w / 2, top, w, h, 14); ctx.fill();
+    ctx.fillStyle = this.color; ctx.fillRect(cx - w / 2 + 4, top + h - 4 - (h - 8) * Math.min(1.02, this.level), w - 8, (h - 8) * Math.min(1.02, this.level));
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,.6)'; C.rrect(ctx, cx - w / 2, top, w, h, 14); ctx.stroke();
+    const ly = top + h - 4 - (h - 8) * this.line; ctx.setLineDash([8, 6]); ctx.strokeStyle = '#FFD23F'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx - w / 2 - 20, ly); ctx.lineTo(cx + w / 2 + 20, ly); ctx.stroke(); ctx.setLineDash([]); C.text(ctx, 'LINJEN', cx + w / 2 + 50, ly, 12, '#FFD23F', 'center', C.F.ui, false);
+    if (this.pouring) { ctx.fillStyle = this.color; ctx.fillRect(cx - 6, 120, 12, top + h - 4 - (h - 8) * this.level - 120); }
+    ctx.fillStyle = '#B9A9CC'; C.rrect(ctx, cx - 40, 60, 80, 60, 10); ctx.fill(); ctx.beginPath(); ctx.moveTo(cx - 12, 120); ctx.lineTo(cx + 12, 120); ctx.lineTo(cx, 134); ctx.fill();
+    C.text(ctx, (this.doneOne ? this.n : this.n) + '/' + this.goal + ' GLAS', cx, g.H - 50, 16, '#FFF4DF'); C.text(ctx, 'HÅLL = HÄLL', cx, top - 30, 14, '#B9A9CC', 'center', C.F.ui, false);
+  },
+};
+
+const BOSS = Object.assign({}, STAPLA, {
+  id: 'boss', verb: 'BOSS: HANGRY!', emoji: '👹', hint: 'nå munnen: 9 lager utan miss', bg: '#3A1030', dur: 22, boss: true,
+  start(m) { STAPLA.start.call(this, m); this.goal = 9; this.skin = SKINS[Math.floor(m.rng() * SKINS.length)]; },
+  render(ctx, m) { STAPLA.render.call(this, ctx, m); const my = g.H - 130 - this.goal * 30; ctx.save(); ctx.globalAlpha = 0.95; face(ctx, g.W / 2, my - 90, 110, this.skin, -1, 0); ctx.beginPath(); ctx.ellipse(g.W / 2, my, 108, 22 + 16 * this.stack.length / this.goal, 0, 0, Math.PI * 2); ctx.fillStyle = '#5A0F1A'; ctx.fill(); ctx.restore(); bubble(ctx, ['JAG ÄR HANGRY!', 'HÖGRE!', 'MEEER!'][Math.floor(m.t / 2) % 3], g.W / 2, my - 230, 18); },
+});
+
+const MICROS = [STAPLA, KASTA, VAND, SKAR, DOPPA, MATKAST, SORTERA, HALL];
+
+// ---------------------------------------------------------------- hub
+const G = { screen: 'menu', mode: 'free', seed: '', round: 0, lives: 4, score: 0, state: 'intro', st: 0, game: null, m: null, speed: 1, result: null, overReadyAt: 0, duel: { turn: 0, lives: [4, 4], scores: [0, 0], results: [] }, challengeSeed: null, challengeScore: 0, cleared: 0, bossKills: 0, hist: [], prev: -1 };
+const LIVES = 4;
+function pickGame(r) { if (r % 6 === 5) return BOSS; let idx; const rr = C.rngAt(G.seed + '-pick', r); do idx = Math.floor(rr() * MICROS.length); while (idx === G.prev); G.prev = idx; return MICROS[idx]; }
+function startGame(mode) {
+  G.mode = mode; G.screen = 'play'; G.seed = mode === 'daily' ? 'daily-' + C.todayStr() : mode === 'challenge' ? G.challengeSeed : C.newSeed();
+  G.round = 0; G.lives = LIVES; G.score = 0; G.cleared = 0; G.bossKills = 0; G.hist = []; G.prev = -1; G.speed = 1;
+  if (mode === 'duel') G.duel = { turn: 0, lives: [LIVES, LIVES], scores: [0, 0], results: [] };
+  C.ui.hideAll(); startRound();
+  C.ui.toast(mode === 'duel' ? 'Turas om: samma rätt för båda, sedan nästa. Sist kvar vinner.' : 'Läs verbet. Gör grejen. Snabbt.', 2200);
+}
+function startRound() {
+  const r = G.round; G.speed = Math.min(2.2, 1 + 0.07 * r); if (G.mode === 'duel' && G.duel.turn === 1) G.prev = G.prevBefore; G.prevBefore = G.prev;
+  const game = pickGame(r); G.game = Object.create(game);
+  const m = { seed: G.seed + ':' + r, rng: C.rngStream(G.seed + ':' + r), speed: G.speed, t: 0, timeMax: Math.max(5, game.dur / (0.7 + 0.3 * G.speed)), done: (ok, score, label) => finishRound(ok, score, label) };
+  m.timeLeft = m.timeMax; G.m = m; G.game.start(m); G.state = 'intro'; G.st = 0; G.result = null;
+  C.haptics.medium(); C.audio.pop();
+}
+function finishRound(ok, score, label) {
+  if (G.state !== 'play') return; G.state = 'result'; G.st = 0;
+  const mult = 1 + 0.1 * G.round + (G.game.boss ? 1 : 0), pts = ok ? Math.round(score * mult) : 0;
+  G.result = { ok, pts, label: label || '' };
+  if (ok) { G.score += pts; G.cleared++; if (G.game.boss) G.bossKills++; C.haptics.win(); C.audio.chord(); } else { G.lives--; C.haptics.fail(); C.audio.buzz(); g.fx.shake = 14; }
+  G.hist.push({ id: G.game.id, ok, pts });
+}
+function afterResult() {
+  if (G.mode === 'duel') {
+    G.duel.scores[G.duel.turn] = G.score; G.duel.lives[G.duel.turn] = G.lives;
+    if (G.duel.turn === 0) { G.duel.turn = 1; const l = G.lives, s = G.score; G.lives = G.duel.lives[1]; G.score = G.duel.scores[1]; G.duel.lives[0] = l; G.duel.scores[0] = s; startRound(); C.ui.toast('Spelare 2 – samma rätt!', 1200); return; }
+    G.duel.turn = 0; G.lives = G.duel.lives[0]; G.score = G.duel.scores[0];
+    if (G.duel.lives[0] <= 0 || G.duel.lives[1] <= 0 || G.round >= 11) { showOver(); return; }
+    G.round++; startRound(); C.ui.toast('Spelare 1 – nästa rätt!', 1200); return;
+  }
+  if (G.lives <= 0) { showOver(); return; }
+  G.round++; startRound();
+}
+function showOver() {
+  G.screen = 'over'; G.overReadyAt = performance.now() + 500;
+  if (G.mode === 'duel') { const [a, b] = G.duel.scores, [la, lb] = G.duel.lives; const w = la <= 0 && lb > 0 ? 2 : lb <= 0 && la > 0 ? 1 : a === b ? 0 : a > b ? 1 : 2; C.ui.setText('overTag', w ? 'SPELARE ' + w + ' VANN KÖKET' : 'OAVGJORT'); C.ui.setText('overScore', a + ' – ' + b); C.ui.setText('overSub', 'Samma rätter, samma tempo. Revansch?'); $('bShare').hidden = true; $('bAgain').textContent = 'REVANSCH'; C.ui.show('over'); return; }
+  const key = G.mode === 'daily' ? 'daily.' + C.todayStr() : 'best', best = S.get(key, 0), rec = G.score > best; if (rec) S.set(key, G.score);
+  C.ui.setText('overTag', (G.mode === 'daily' ? 'DAGENS MENY · ' : G.mode === 'challenge' ? 'UTMANING · ' : '') + (G.bossKills ? 'KUNDEN ÄR MÄTT. NÄSTAN.' : 'KÖKET STÄNGDE'));
+  C.ui.setText('overScore', String(G.score));
+  let sub = (rec ? 'NYTT REKORD!' : 'Bästa: ' + best) + ' · ' + G.cleared + ' rätter klara av ' + (G.round + 1) + (G.bossKills ? ' · ' + G.bossKills + ' bossar' : '');
+  if (G.mode === 'challenge') sub += G.score > G.challengeScore ? ' · Du slog din vän (' + G.challengeScore + ')! 🏆' : ' · Din vän hade ' + G.challengeScore + '.';
+  C.ui.setText('overSub', sub); $('bShare').hidden = false; $('bAgain').textContent = 'IGEN'; $('linkbox').hidden = true;
+  if (rec && best > 0) { C.haptics.win(); C.audio.fanfare(); }
+  updateBest(); C.ui.show('over');
+}
+function restart() { startGame(G.mode); }
+function goMenu() { G.screen = 'menu'; C.ui.hideAll(); C.ui.show('menu'); updateBest(); }
+function updateBest() { const b = S.get('best', 0), d = S.get('daily.' + C.todayStr(), 0); C.ui.setText('bestLine', (b ? 'Bästa: ' + b : 'Inget rekord än') + (d ? ' · Dagens: ' + d : '')); }
+function share() { const url = location.href.split('#')[0] + '#s=' + encodeURIComponent(G.seed) + '&t=' + G.score; C.share({ text: 'FOOD WARS 🍔🍣🥞 ' + G.score + ' p, ' + G.cleared + ' rätter. Samma meny, slå mig:', url, linkboxId: 'linkbox' }); }
+
+function update(dt) {
+  if (G.screen !== 'play' || !G.game) return;
+  G.st += dt;
+  if (G.state === 'intro') { if (G.st >= 1.0) { G.state = 'play'; G.st = 0; C.haptics.tap(); C.audio.ding(); } return; }
+  if (G.state === 'play') { const m = G.m; m.t += dt; m.timeLeft -= dt; G.game.update(dt, m); if (G.state === 'play' && m.timeLeft <= 0) { m.timeLeft = 0; if (G.game.timeout) G.game.timeout(m); else m.done(false, 0, 'tiden gick'); } return; }
+  if (G.state === 'result' && G.st >= 1.0) afterResult();
+}
+function render(ctx) {
+  ctx.save(); g.fx.applyShake(ctx);
+  if (G.screen === 'menu' || !G.game) { const gr = ctx.createLinearGradient(0, 0, 0, g.H); gr.addColorStop(0, '#1B1430'); gr.addColorStop(1, '#3A2657'); ctx.fillStyle = gr; ctx.fillRect(0, 0, g.W, g.H); ctx.restore(); return; }
+  G.game.render(ctx, G.m);
+  // HUD
+  ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 0, g.W, 58);
+  C.text(ctx, '♥'.repeat(Math.max(0, G.lives)) + '♡'.repeat(Math.max(0, LIVES - G.lives)), 14, 22, 18, '#FF4B3E', 'left');
+  C.text(ctx, String(G.score), g.W / 2, 24, 28, '#FFF4DF');
+  C.text(ctx, (G.mode === 'duel' ? 'P' + (G.duel.turn + 1) + ' · ' : '') + 'RÄTT ' + (G.round + 1) + ' · ×' + G.speed.toFixed(1), g.W - 14, 22, 12, '#B9A9CC', 'right', C.F.ui);
+  if (G.state === 'play') bar(ctx, 14, 44, g.W - 28, 8, G.m.timeLeft / G.m.timeMax, G.m.timeLeft < 3 ? '#FF4B3E' : '#FFC145');
+  if (G.state === 'intro') {
+    const k = Math.min(1, G.st / 0.15), pop = 1 + 0.2 * (1 - k); ctx.fillStyle = 'rgba(20,12,40,.72)'; ctx.fillRect(0, 0, g.W, g.H);
+    ctx.save(); ctx.translate(g.W / 2, g.H / 2); ctx.scale(pop, pop); ctx.translate(-g.W / 2, -g.H / 2);
+    C.rrect(ctx, 30, g.H / 2 - 130, g.W - 60, 260, 24); ctx.fillStyle = G.game.boss ? '#7A1F2B' : '#FFC145'; ctx.fill();
+    C.emoji(ctx, G.game.emoji, g.W / 2, g.H / 2 - 60, 64);
+    C.text(ctx, G.game.verb, g.W / 2, g.H / 2 + 20, G.game.verb.length > 10 ? 34 : 44, G.game.boss ? '#FFF4DF' : '#1B1430', 'center', C.F.display, false);
+    const hint = G.game.hint; ctx.font = '800 13px ' + C.F.ui; const words = hint.split(' '); let line = '', lines = []; for (const w of words) { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > g.W - 110 && line) { lines.push(line); line = w; } else line = t; } lines.push(line);
+    lines.forEach((ln, i) => C.text(ctx, ln, g.W / 2, g.H / 2 + 62 + i * 18, 13, G.game.boss ? '#FFF4DF' : '#1B1430', 'center', '800 ' + C.F.ui, false));
+    ctx.restore();
+    if (G.round > 0 && G.round % 4 === 0 && !G.game.boss) C.text(ctx, 'SNABBARE!', g.W / 2, g.H / 2 - 170, 30, '#FF4B3E');
+  }
+  if (G.state === 'result' && G.result) {
+    const r = G.result, k = Math.min(1, G.st / 0.12); ctx.fillStyle = r.ok ? 'rgba(31,107,58,.6)' : 'rgba(122,31,43,.65)'; ctx.fillRect(0, 0, g.W, g.H);
+    ctx.save(); ctx.translate(g.W / 2, g.H / 2); ctx.scale(k, k); C.text(ctx, r.ok ? 'KLART!' : 'MISS!', 0, -20, 56, '#FFF4DF'); C.text(ctx, r.ok ? '+' + r.pts + (r.label ? ' · ' + r.label : '') : (r.label || 'ett liv mindre'), 0, 34, 20, '#FFF4DF', 'center', '800 ' + C.F.ui); ctx.restore();
+  }
+  g.fx.draw(ctx); ctx.restore();
+}
+const fwd = (name, ...args) => { if (G.screen === 'play' && G.state === 'play' && G.game && G.game[name]) G.game[name](...args); };
+const g = C.mount({ ariaLabel: 'Food Wars spelplan',
+  onTap: (x, y, s) => { if (G.screen === 'play') { if (x < 70 && y > g.H - 40 && G.state !== 'play') { goMenu(); return; } fwd('onTap', G.m, s); } else if (G.screen === 'over' && performance.now() > G.overReadyAt) restart(); },
+  onSwipe: (dir, s) => fwd('onSwipe', dir, G.m, s),
+  onDown: (x, y, s) => fwd('onDown', x, y, s, G.m),
+  onMove: (x, y, dx, dy, s) => fwd('onMove', x, y, dx, dy, s, G.m),
+  onUp: (x, y, s) => fwd('onUp', x, y, s, G.m),
+  update, render,
+  onKey: k => { if (k === 'Escape') { goMenu(); return true; } if ((k === ' ' || k === 'Enter') && G.screen === 'menu') { startGame(G.challengeSeed ? 'challenge' : 'free'); return true; } if (k === 'd' && G.screen === 'play') { fwd('onDown', g.W / 2, g.H / 2, { key: true }, G.m); return true; } if (k === 'u' && G.screen === 'play') { fwd('onUp', g.W / 2, g.H / 2, { key: true, swiped: false }, G.m); return true; } return false; } });
+function refreshToggles() { C.ui.setText('bHap', 'Vibration: ' + (C.haptics.on ? 'på' : 'av')); C.ui.setText('bSnd', 'Ljud: ' + (C.audio.on ? 'på' : 'av')); }
+const h = C.hash();
+if (h.get('s')) { G.challengeSeed = h.get('s'); G.challengeScore = parseInt(h.get('t') || '0', 10) || 0; $('challengeLine').hidden = false; C.ui.setText('challengeLine', 'Utmaning från en vän: slå ' + G.challengeScore + ' p på exakt samma meny. TILL KÖKET startar utmaningen.'); C.ui.setText('bPlay', 'TA UTMANINGEN'); }
+C.ui.bind('bPlay', () => startGame(G.challengeSeed ? 'challenge' : 'free'));
+C.ui.bind('bDaily', () => startGame('daily'));
+C.ui.bind('bDuel', () => startGame('duel'));
+C.ui.bind('bHap', () => { C.haptics.on = !C.haptics.on; S.set('haptics', C.haptics.on); refreshToggles(); C.haptics.medium(); });
+C.ui.bind('bSnd', () => { C.audio.on = !C.audio.on; S.set('sound', C.audio.on); refreshToggles(); C.audio.blip(1); });
+C.ui.bind('bAgain', restart); C.ui.bind('bShare', share); C.ui.bind('bMenu', goMenu);
+C.ui.overlayTap('over', () => { if (performance.now() > G.overReadyAt) restart(); });
+refreshToggles(); updateBest(); window.__G = G; window.__MICROS = MICROS;
+const boot = () => g.start();
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(boot); else boot();
+})();
+</script>
+</body>
+</html>

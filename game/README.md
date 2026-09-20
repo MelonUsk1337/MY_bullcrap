@@ -1,9 +1,10 @@
-# Prototyper – elva casual-spel för swipe, tap och vibration
+# Prototyper – tolv casual-spel för swipe, tap och vibration
 
 Alla är enskilda HTML-sidor utan byggsteg. `lib/core.js` är det delade kärnbiblioteket (canvas, input, haptik, syntljud, effekter, seedad slump, menyer, delning). `lib/matter.min.js` (MIT) används bara av Jenga-huset.
 
 | Spel | Fil | Spela på mobilen | Mekanik | Tvåspelarläge |
 |---|---|---|---|---|
+| **Food Wars** (samlingen) | `foodwars.html` | https://claude.ai/artifact/NLNAPEqtGD5KfbLJc7hUgj | WarioWare-loop: nio mikrospel (stapla, kasta, vänd, skär, doppa, matkrig, sortera, häll, boss) à 9–22 s, verb-kort före varje, fyra liv, tempo ×1,07 per rätt, boss var sjätte | Turas om: båda spelar samma rätt, sedan nästa; sist kvar vinner |
 | HANGRY | `hangry.html` | https://claude.ai/artifact/84VJfD8Z6pqzhaHLNVNHgF | Tap = släpp, ⇠⇢ = släng skräp, ⇡ = servera, ⇣ = slam | Turas om på samma burgare, den som rasar förlorar |
 | Dörrvakten | `dorrvakten.html` | https://claude.ai/artifact/YGMrf1N1EF8hFWdmVNZjZE | ⇢ in, ⇠ nej, ⇡ VIP, ⇣ visitera; regler byts var 8:e gäst, motsatt dag | Turas om, samma kö, jämför poäng |
 | Sushi-kast | `sushi.html` | https://claude.ai/artifact/FNdfGTkRzdds2EXWSSWuFC | Swipa tallriken mot gästen som beställt; katt och wasabi | Delad skärm samtidigt, swipe mot mitten kastar till motståndaren |
@@ -45,6 +46,7 @@ game/
   index.html        nav till alla sex
   hangry.html       fristående (eget inbyggt kärnbibliotek, äldst)
   dorrvakten.html   sushi.html  jenga.html  tunnelbanan.html  chores.html
+  foodwars.html     samlingen: alla mat-mekaniker som mikrospel
   pannkaka.html     fika.html   matkrig.html  kebab.html  nummerlappen.html
   lib/core.js       delat kärnbibliotek
   lib/matter.min.js fysik (MIT, matter-js 0.20.0)
