@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Sysslor</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@700;900&display=swap">
+<style>
+:root{--ground:#1F2A22;--panel:rgba(20,28,22,.9);--cream:#FFF8EC;--dim:#B8C4B4;--accent:#7ED957;--accent-shadow:#3E8E2E;--btn-text:#0F2A12;--card:#2E3D31;--card-dk:#1F2A22;--line:#4B5E4E;--how-cols:3;color-scheme:dark}
+.who{display:flex;gap:8px;width:100%;max-width:360px}
+.who label{flex:1;display:flex;flex-direction:column;gap:4px;background:var(--card);border:2px solid var(--line);border-radius:14px;padding-block:8px;padding-inline:10px;cursor:pointer;text-align:left}
+.who label.active{border-color:var(--accent)}
+.who span{font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.who input{font:800 15px Nunito,system-ui,sans-serif;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--cream);width:100%;padding:2px 0;outline:none}
+.chores{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;width:100%;max-width:360px}
+.chore{display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--card);border:2px solid var(--line);border-radius:16px;padding-block:12px;padding-inline:8px;color:var(--cream);cursor:pointer;font-family:Nunito,system-ui,sans-serif;box-shadow:0 5px 0 var(--card-dk);transition:transform .05s}
+.chore:active{transform:translateY(3px);box-shadow:0 2px 0 var(--card-dk)}
+.chore.done{border-color:var(--accent)}
+.chore .ce{font-size:34px;line-height:1}
+.chore .cn{font-weight:900;font-size:14px}
+.chore .cs{font-family:"Lilita One",Impact,system-ui,sans-serif;font-size:18px;color:#FFD166;letter-spacing:2px}
+.chore .cb{font-size:11px;font-weight:800;color:var(--dim)}
+.score-line{font-weight:900;font-size:14px;color:var(--cream);margin:0}
+.stars{font-family:"Lilita One",Impact,system-ui,sans-serif;font-size:56px;line-height:1;margin:0;color:#FFD166;letter-spacing:4px}
+</style>
+<script src="lib/core.js"></script>
+</head>
+<body>
+<div id="stage"><div id="box"><div id="frame">
+<div id="menu" class="ov">
+  <h1 class="logo">SYSSLOR</h1>
+  <p class="sub">Fyra tråkiga sysslor, fyra snabba spel. Samma gräsmatta, ruta, tvätthög och golv för hela hushållet i dag. Vem städar bäst?</p>
+  <div class="who" id="who">
+    <label id="who0" class="active"><span>Spelare 1</span><input id="name0" maxlength="14" aria-label="Namn spelare 1"></label>
+    <label id="who1"><span>Spelare 2</span><input id="name1" maxlength="14" aria-label="Namn spelare 2"></label>
+  </div>
+  <div id="choreList" class="chores"></div>
+  <p class="score-line" id="dayLine"></p>
+  <p class="small" id="streakLine"></p>
+  <div class="row">
+    <button class="btn sec" id="bHap">Vibration: på</button>
+    <button class="btn sec" id="bSnd">Ljud: på</button>
+  </div>
+</div>
+<div id="intro" class="ov" hidden>
+  <p class="tag" id="introTag">SYSSLA</p>
+  <h1 class="logo" id="introTitle" style="font-size:44px"></h1>
+  <p class="sub" id="introHint"></p>
+  <div class="how" id="introHow"></div>
+  <button class="btn" id="bStart">KÖR</button>
+  <button class="btn sec" id="bIntroBack">Tillbaka</button>
+</div>
+<div id="over" class="ov" hidden>
+  <p class="tag" id="overTag"></p>
+  <p class="stars" id="overStars">★★★</p>
+  <p class="big" id="overScore" style="font-size:44px">0</p>
+  <p class="sub" id="overSub"></p>
+  <button class="btn" id="bNext">NÄSTA SYSSLA</button>
+  <div class="row">
+    <button class="btn sec" id="bAgain">Igen</button>
+    <button class="btn sec" id="bShare">Utmana</button>
+    <button class="btn sec" id="bMenu">Till huset</button>
+  </div>
+  <input id="linkbox" class="linkbox" hidden readonly aria-label="Utmaningslänk">
+</div>
+<div id="toast" role="status"></div>
+</div></div></div>
+<script>
+(() => {
+'use strict';
+const C = Core, $ = C.$;
+const S = C.store('sysslor');
+C.haptics.on = S.get('haptics', true); C.audio.on = S.get('sound', true);
+const CHORES = [
+  { id: 'grass', name: 'Klippa gräset', emoji: '🌱', tag: 'TRÄDGÅRDEN', hint: 'Swipa för att styra klipparen. Klipp allt innan grannen klagar. Stenar stoppar, blommor får inte klippas, mullvaden gräver upp.', how: [['⇠⇡⇢⇣', 'styr klipparen'], ['🪨 💩', 'akta'], ['🐹', 'kör över mullvaden']] },
+  { id: 'window', name: 'Torka fönster', emoji: '🪟', tag: 'VARDAGSRUMMET', hint: 'Dra fingret över rutan tills den är blank innan regnet kommer. Fåglar bajsar på rutan, tryck på dem innan de hinner. Flugor: tryck.', how: [['DRA', 'torka rutan'], ['🐦', 'tryck innan den bajsar'], ['🪰', 'tryck på flugan']] },
+  { id: 'laundry', name: 'Sortera tvätt', emoji: '🧺', tag: 'TVÄTTSTUGAN', hint: 'Swipa plagget till rätt hög. Trasigt går alltid i soporna, fintvätt alltid upp. Ljusrosa är INTE vitt.', how: [['⇠', 'vitt'], ['⇢', 'kulört'], ['⇡', 'fintvätt'], ['⇣', 'trasigt']] },
+  { id: 'vacuum', name: 'Dammsuga', emoji: '🧹', tag: 'VARDAGSRUMMET', hint: 'Swipa för att styra dammsugaren och sug upp allt damm. Katten klöser om du kör på den. Lego fastnar i slangen.', how: [['⇠⇡⇢⇣', 'styr dammsugaren'], ['🐈', 'kör inte på katten'], ['🧱', 'lego fastnar']] },
+];
+const G = { screen: 'menu', chore: null, game: null, seed: '', who: S.get('who', 0), names: S.get('names', ['', '']), overReadyAt: 0, challenge: null };
+const today = () => C.todayStr();
+const dayKey = () => 'day.' + today();
+const dayData = () => S.get(dayKey(), {});
+const nameOf = i => (G.names[i] || '').trim() || 'Spelare ' + (i + 1);
+function saveResult(choreId, score, stars) {
+  const d = dayData(); const p = d['p' + G.who] || (d['p' + G.who] = {});
+  const prev = p[choreId];
+  if (!prev || prev.score < score) p[choreId] = { score, stars };
+  S.set(dayKey(), d);
+  const done = CHORES.every(c => p[c.id] && p[c.id].stars >= 1);
+  if (done) { const sk = 'streak.p' + G.who, st = S.get(sk, { count: 0, last: '' }); if (st.last !== today()) { const y = new Date(); y.setDate(y.getDate() - 1); const ystr = y.getFullYear() + '-' + String(y.getMonth() + 1).padStart(2, '0') + '-' + String(y.getDate()).padStart(2, '0'); st.count = st.last === ystr ? st.count + 1 : 1; st.last = today(); S.set(sk, st); } }
+  return done;
+}
+function renderHub() {
+  const d = dayData(), p = d['p' + G.who] || {};
+  const list = $('choreList'); list.innerHTML = '';
+  for (const c of CHORES) {
+    const r = p[c.id]; const b = document.createElement('button'); b.className = 'chore' + (r && r.stars >= 1 ? ' done' : ''); b.dataset.id = c.id;
+    b.innerHTML = '<span class="ce">' + c.emoji + '</span><span class="cn">' + c.name + '</span><span class="cs">' + (r ? '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars) : '☆☆☆') + '</span><span class="cb">' + (r ? r.score + ' p' : 'inte gjord') + '</span>';
+    b.addEventListener('click', () => { C.audio.unlock(); C.haptics.tap(); openIntro(c.id); });
+    list.appendChild(b);
+  }
+  const tot = i => { const q = d['p' + i] || {}; return CHORES.reduce((a, c) => a + (q[c.id] ? q[c.id].score : 0), 0); };
+  $('dayLine').textContent = 'I dag: ' + nameOf(0) + ' ' + tot(0) + ' p · ' + nameOf(1) + ' ' + tot(1) + ' p' + (tot(0) !== tot(1) ? ' · ' + (tot(0) > tot(1) ? nameOf(0) : nameOf(1)) + ' leder' : '');
+  const st = S.get('streak.p' + G.who, { count: 0, last: '' });
+  const allDone = CHORES.every(c => p[c.id] && p[c.id].stars >= 1);
+  $('streakLine').textContent = (allDone ? 'HELA HUSET RENT I DAG! 🏠✨ ' : '') + (st.count ? 'Städ-streak: ' + st.count + ' dag' + (st.count > 1 ? 'ar' : '') : 'Gör alla fyra sysslor i dag för att starta en streak.');
+  $('who0').classList.toggle('active', G.who === 0); $('who1').classList.toggle('active', G.who === 1);
+}
+function openIntro(id) {
+  const c = CHORES.find(x => x.id === id); G.chore = c;
+  $('introTag').textContent = c.tag; $('introTitle').textContent = c.name.toUpperCase(); $('introHint').textContent = c.hint;
+  const how = $('introHow'); how.innerHTML = ''; how.style.setProperty('--how-cols', String(c.how.length));
+  for (const [gl, lb] of c.how) { const d = document.createElement('div'); d.innerHTML = '<b>' + gl + '</b>' + lb; how.appendChild(d); }
+  C.ui.hideAll(); C.ui.show('intro');
+}
+function startChore() {
+  const c = G.chore; G.seed = (G.challenge && G.challenge.chore === c.id) ? G.challenge.seed : 'day-' + today() + '-' + c.id;
+  G.screen = 'play'; C.ui.hideAll();
+  G.game = c.id === 'grass' ? new Coverage('grass') : c.id === 'vacuum' ? new Coverage('vacuum') : c.id === 'window' ? new WindowGame() : new Laundry();
+  G.game.start();
+}
+function finishChore(res) {
+  // res: {score, stars, lines:[]}
+  G.screen = 'over'; G.overReadyAt = performance.now() + 500;
+  const allDone = saveResult(G.chore.id, res.score, res.stars);
+  $('overTag').textContent = G.chore.name.toUpperCase() + (res.stars >= 1 ? ' · KLART' : ' · INTE KLART');
+  $('overStars').textContent = '★'.repeat(res.stars) + '☆'.repeat(3 - res.stars);
+  $('overScore').textContent = res.score + ' p';
+  $('overSub').textContent = res.lines.join(' · ') + (allDone ? ' · HELA HUSET RENT! 🏠✨' : '');
+  const d = dayData(), p = d['p' + G.who] || {}; const next = CHORES.find(c => !(p[c.id] && p[c.id].stars >= 1));
+  $('bNext').hidden = !next; if (next) $('bNext').textContent = 'NÄSTA: ' + next.name.toUpperCase();
+  $('linkbox').hidden = true;
+  if (res.stars >= 1) { C.haptics.win(); C.audio.fanfare(); } else { C.haptics.fail(); C.audio.buzz(); }
+  C.ui.show('over');
+}
+function goMenu() { G.screen = 'menu'; G.game = null; C.ui.hideAll(); renderHub(); C.ui.show('menu'); }
+function share() { const url = location.href.split('#')[0] + '#c=' + G.chore.id + '&s=' + encodeURIComponent(G.seed) + '&t=' + ($('overScore').textContent.replace(/\D/g, '')); C.share({ text: 'SYSSLOR 🏠 ' + nameOf(G.who) + ' fick ' + $('overScore').textContent + ' på "' + G.chore.name + '". Samma ' + G.chore.name.toLowerCase() + ', slå det:', url, linkboxId: 'linkbox' }); }
+
+// ================================================================ Coverage engine (grass + vacuum)
+const DIRV = { left: { x: -1, y: 0 }, right: { x: 1, y: 0 }, up: { x: 0, y: -1 }, down: { x: 0, y: 1 } };
+class Coverage {
+  constructor(kind) { this.kind = kind; }
+  start() {
+    const cs = 36, cols = 10; this.cs = cs; this.cols = cols; this.ox = (g.W - cols * cs) / 2; this.oy = 96;
+    this.rows = Math.max(10, Math.floor((g.H - this.oy - 66) / cs));
+    this.cells = new Array(cols * this.rows).fill(0); // 0 todo, 1 done, 2 block, 3 flower, 4 hazard(poop/lego)
+    const r = C.rngStream(G.seed);
+    const free = (x, y) => this.get(x, y) === 0 && !(x === 0 && y === this.rows - 1) && !(x === 1 && y === this.rows - 1) && !(x === 0 && y === this.rows - 2);
+    if (this.kind === 'grass') {
+      for (let n = 0; n < 9; n++) { const x = Math.floor(r() * cols), y = Math.floor(r() * this.rows); if (free(x, y)) this.cells[this.idx(x, y)] = 2; }
+      for (let n = 0; n < 2; n++) { const x = Math.floor(r() * (cols - 2)), y = Math.floor(r() * (this.rows - 2)); for (let dx = 0; dx < 2; dx++) for (let dy = 0; dy < 2; dy++) if (free(x + dx, y + dy)) this.cells[this.idx(x + dx, y + dy)] = 3; }
+      for (let n = 0; n < 3; n++) { const x = Math.floor(r() * cols), y = Math.floor(r() * this.rows); if (free(x, y)) this.cells[this.idx(x, y)] = 4; }
+      this.time = 60; this.label = 'GRANNEN KLAGAR OM'; this.moleAt = 15; this.mole = null;
+    } else {
+      this.furn = [];
+      const shapes = [[3, 2, 'SOFFA'], [2, 3, 'BOKHYLLA'], [2, 2, 'BORD'], [3, 1, 'TV-BÄNK']];
+      for (const [w, h, name] of shapes) { for (let tries = 0; tries < 20; tries++) { const x = Math.floor(r() * (cols - w)), y = Math.floor(r() * (this.rows - h)); let ok = true; for (let dx = 0; dx < w; dx++) for (let dy = 0; dy < h; dy++) if (!free(x + dx, y + dy)) ok = false; if (ok) { for (let dx = 0; dx < w; dx++) for (let dy = 0; dy < h; dy++) this.cells[this.idx(x + dx, y + dy)] = 2; this.furn.push({ x, y, w, h, name }); break; } } }
+      for (let n = 0; n < 7; n++) { const x = Math.floor(r() * cols), y = Math.floor(r() * this.rows); if (free(x, y)) this.cells[this.idx(x, y)] = 4; }
+      this.cat = { x: cols - 1, y: 0, t: 0, flee: 0 }; this.time = 60; this.label = 'KATTEN VILL SOVA OM';
+      this.suck = [];
+    }
+    this.total = this.cells.filter(c => c === 0 || c === 4).length; this.done = 0;
+    this.p = { x: 0, y: this.rows - 1, dir: DIRV.right, next: null, prog: 0, stunned: 0, stopped: true, inv: 0 };
+    this.stepT = 0.16; this.lives = 3; this.score = 0; this.combo = 0; this.smear = 0; this.tickT = 0; this.over = false; this.t = 0; this.dotSeed = C.rngStream(G.seed + 'dots');
+    this.dots = []; for (let i = 0; i < this.cells.length; i++) { const arr = []; for (let k = 0; k < 7; k++) arr.push([this.dotSeed() * 32 + 2, this.dotSeed() * 32 + 2, 1 + this.dotSeed() * 2]); this.dots.push(arr); }
+    C.ui.toast(this.kind === 'grass' ? 'Swipa åt något håll för att börja klippa.' : 'Swipa åt något håll för att börja suga.', 2000);
+  }
+  idx(x, y) { return y * this.cols + x; }
+  get(x, y) { if (x < 0 || y < 0 || x >= this.cols || y >= this.rows) return 2; return this.cells[this.idx(x, y)]; }
+  setDir(dir) { if (this.over) return; this.p.next = DIRV[dir]; if (this.p.stopped) { this.p.stopped = false; this.p.prog = 0.99; } }
+  step() {
+    const p = this.p; if (p.next) { p.dir = p.next; p.next = null; }
+    const nx = p.x + p.dir.x, ny = p.y + p.dir.y, c = this.get(nx, ny);
+    if (c === 2) { p.stopped = true; C.haptics.light(); C.audio.thud(); if (this.kind === 'grass') { g.fx.text(this.cx(p.x), this.cy(p.y) - 30, 'STOPP', '#FFF8EC', 16, 0.5); } return; }
+    p.x = nx; p.y = ny; this.enter(nx, ny, c);
+  }
+  cx(x) { return this.ox + (x + 0.5) * this.cs; }
+  cy(y) { return this.oy + (y + 0.5) * this.cs; }
+  enter(x, y, c) {
+    const i = this.idx(x, y), px = this.cx(x), py = this.cy(y);
+    if (c === 0) { this.cells[i] = 1; this.done++; this.combo++; const pts = 10 + Math.min(this.combo, 20); this.score += pts; if (g.t - this.tickT > 0.09) { this.tickT = g.t; C.haptics.tick(); C.audio.tick(); }
+      if (this.kind === 'grass') g.fx.burst(px, py, 3, ['#A5E07A', '#7CCB5E'], 90, 0.4, 250); else for (let k = 0; k < 4; k++) this.suck.push({ x: px + (Math.random() - 0.5) * 26, y: py + (Math.random() - 0.5) * 26, t: 0 }); }
+    else if (c === 3) { this.cells[i] = 1; this.lives--; this.combo = 0; g.fx.text(px, py - 30, 'BLOMMORNA!', '#FF6B6B', 22, 1.2); g.fx.burst(px, py, 12, ['#FF6B9A', '#FFD166'], 200, 0.7); g.fx.shake = 10; C.haptics.fail(); C.audio.buzz(); if (this.lives <= 0) this.end('lives'); }
+    else if (c === 4) { this.cells[i] = 1; this.done++; this.combo = 0;
+      if (this.kind === 'grass') { this.smear = 2.5; g.fx.text(px, py - 30, 'BLÄ! 💩', '#C89B3C', 24, 1.2); g.fx.shake = 8; C.haptics.medium(); C.audio.splash(); }
+      else { this.p.stunned = 1.0; g.fx.text(px, py - 30, 'AJ! LEGO FASTNADE', '#FF6B6B', 18, 1.2); g.fx.shake = 8; C.haptics.medium(); C.audio.crunch(); } }
+    if (this.kind === 'grass' && this.mole && this.mole.up && this.mole.x === x && this.mole.y === y) { this.score += 50; g.fx.text(px, py - 40, 'MULLVAD! +50', '#FFD166', 24, 1.2); g.fx.burst(px, py, 14, ['#8B5A2B', '#FFD166'], 220, 0.7); this.mole = null; C.haptics.success(3); C.audio.sparkle(); }
+    if (this.kind === 'vacuum' && this.cat.x === x && this.cat.y === y) this.catHit();
+    if (this.done >= this.total) this.end('done');
+  }
+  catHit() { if (this.p.inv > 0) return; this.lives--; this.p.inv = 1.2; g.fx.text(this.cx(this.cat.x), this.cy(this.cat.y) - 30, 'KLÖS!', '#FF6B6B', 26, 1.2); g.fx.shake = 12; C.haptics.fail(); C.audio.meow(); this.catFlee(); if (this.lives <= 0) this.end('lives'); }
+  catFlee() { let best = null, bd = -1; for (let n = 0; n < 30; n++) { const x = Math.floor(Math.random() * this.cols), y = Math.floor(Math.random() * this.rows); if (this.get(x, y) === 2) continue; const d = Math.abs(x - this.p.x) + Math.abs(y - this.p.y); if (d > bd) { bd = d; best = { x, y }; } } if (best) { this.cat.x = best.x; this.cat.y = best.y; } this.cat.flee = 1; }
+  update(dt) {
+    if (this.over) return; this.t += dt; this.time -= dt;
+    if (this.time <= 0) { this.time = 0; this.end('time'); return; }
+    const p = this.p;
+    if (p.inv > 0) p.inv -= dt; if (this.smear > 0) this.smear -= dt;
+    if (p.stunned > 0) p.stunned -= dt;
+    else if (!p.stopped) { p.prog += dt / this.stepT; while (p.prog >= 1) { p.prog -= 1; this.step(); if (p.stopped || p.stunned > 0 || this.over) { p.prog = 0; break; } } }
+    if (this.kind === 'grass') {
+      if (this.t >= this.moleAt && !this.mole) { this.moleAt += 12; let x, y; for (let n = 0; n < 30; n++) { x = Math.floor(Math.random() * this.cols); y = Math.floor(Math.random() * this.rows); if (this.get(x, y) === 1 && (Math.abs(x - p.x) + Math.abs(y - p.y)) > 4) break; } if (this.get(x, y) === 1) { this.mole = { x, y, t: 0, up: true }; for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) { const c = this.get(x + dx, y + dy); if (c === 1) { this.cells[this.idx(x + dx, y + dy)] = 0; this.done--; } } g.fx.text(this.cx(x), this.cy(y) - 30, 'MULLVAD!', '#FFD166', 20, 1); C.haptics.medium(); C.audio.pop(); } }
+      if (this.mole) { this.mole.t += dt; if (this.mole.t > 3) this.mole = null; }
+    } else {
+      const cat = this.cat; cat.t += dt;
+      if (cat.flee > 0) cat.flee -= dt;
+      if (cat.t > (cat.flee > 0 ? 0.25 : 0.7)) { cat.t = 0; const dirs = Object.values(DIRV); const d = dirs[Math.floor(Math.random() * 4)]; const nx = cat.x + d.x, ny = cat.y + d.y; if (this.get(nx, ny) !== 2) { cat.x = nx; cat.y = ny; if (cat.x === p.x && cat.y === p.y) this.catHit(); } }
+      for (const s of this.suck) s.t += dt * 4; this.suck = this.suck.filter(s => s.t < 1);
+    }
+  }
+  end(reason) {
+    this.over = true;
+    const pct = Math.round(this.done / this.total * 100);
+    let stars = pct >= 98 ? 3 : pct >= 90 ? 2 : pct >= 75 ? 1 : 0;
+    if (reason === 'lives') stars = Math.min(stars, 1);
+    const bonus = reason === 'done' ? Math.round(this.time) * 5 : 0; this.score += bonus;
+    const lines = [pct + ' % ' + (this.kind === 'grass' ? 'klippt' : 'dammsuget'), reason === 'done' ? 'klart med ' + Math.round(this.time) + ' s kvar (+' + bonus + ')' : reason === 'time' ? (this.kind === 'grass' ? 'grannen klagade' : 'katten somnade på golvet') : (this.kind === 'grass' ? 'blomrabatten är förstörd' : 'katten vann')];
+    setTimeout(() => finishChore({ score: this.score, stars, lines }), 700);
+  }
+  render(ctx) {
+    const cs = this.cs, ox = this.ox, oy = this.oy, W = g.W, H = g.H;
+    if (this.kind === 'grass') { ctx.fillStyle = '#2F6B34'; ctx.fillRect(0, 0, W, H); }
+    else { ctx.fillStyle = '#C9A06C'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = 'rgba(0,0,0,.08)'; for (let y = 0; y < H; y += 24) ctx.fillRect(0, y, W, 2); }
+    for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.cols; x++) {
+      const c = this.cells[this.idx(x, y)], px = ox + x * cs, py = oy + y * cs;
+      if (this.kind === 'grass') {
+        if (c === 0 || c === 3 || c === 4) { ctx.fillStyle = (x + y) % 2 ? '#3E8E41' : '#3A8540'; ctx.fillRect(px, py, cs, cs); ctx.fillStyle = 'rgba(0,0,0,.12)'; for (const [dx, dy] of this.dots[this.idx(x, y)].slice(0, 3)) ctx.fillRect(px + dx, py + dy, 2, 5); }
+        else if (c === 1) { ctx.fillStyle = y % 2 ? '#8ED66E' : '#7CCB5E'; ctx.fillRect(px, py, cs, cs); }
+        else { ctx.fillStyle = '#7CCB5E'; ctx.fillRect(px, py, cs, cs); ctx.fillStyle = '#8A8F98'; ctx.beginPath(); ctx.ellipse(px + cs / 2, py + cs / 2 + 2, 14, 10, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#B5BAC4'; ctx.beginPath(); ctx.ellipse(px + cs / 2 - 3, py + cs / 2 - 2, 6, 4, 0, 0, Math.PI * 2); ctx.fill(); }
+        if (c === 3) C.emoji(ctx, '🌷', px + cs / 2, py + cs / 2, 22);
+        if (c === 4) C.emoji(ctx, '💩', px + cs / 2, py + cs / 2, 20);
+      } else {
+        if (c === 0 || c === 4) { ctx.fillStyle = 'rgba(120,110,100,.35)'; ctx.fillRect(px, py, cs, cs); ctx.fillStyle = 'rgba(70,60,55,.6)'; for (const [dx, dy, s] of this.dots[this.idx(x, y)]) ctx.fillRect(px + dx, py + dy, s, s); }
+        if (c === 4) C.emoji(ctx, '🧱', px + cs / 2, py + cs / 2, 16);
+      }
+    }
+    if (this.kind === 'vacuum') {
+      for (const f of this.furn) { C.rrect(ctx, ox + f.x * cs + 2, oy + f.y * cs + 2, f.w * cs - 4, f.h * cs - 4, 8); ctx.fillStyle = '#5A3E2B'; ctx.fill(); ctx.fillStyle = '#7A563C'; C.rrect(ctx, ox + f.x * cs + 6, oy + f.y * cs + 6, f.w * cs - 12, f.h * cs - 12, 6); ctx.fill(); C.text(ctx, f.name, ox + (f.x + f.w / 2) * cs, oy + (f.y + f.h / 2) * cs, 11, '#FFF8EC', 'center', C.F.ui, false); }
+      for (const s of this.suck) { const k = C.easeIn(s.t), x = C.lerp(s.x, this.px(), k), y = C.lerp(s.y, this.py(), k); ctx.fillStyle = 'rgba(80,70,60,' + (1 - k) + ')'; ctx.fillRect(x, y, 3, 3); }
+      const cat = this.cat; C.emoji(ctx, cat.flee > 0 ? '🙀' : '🐈', this.cx(cat.x), this.cy(cat.y), 26);
+    }
+    if (this.kind === 'grass' && this.mole) { const m = this.mole, up = Math.min(1, m.t * 4) * (m.t > 2.5 ? Math.max(0, (3 - m.t) * 2) : 1); C.emoji(ctx, '🐹', this.cx(m.x), this.cy(m.y) + (1 - up) * 12, 24 * Math.max(0.2, up)); }
+    // player
+    const px = this.px(), py = this.py(), p = this.p, blink = p.inv > 0 && Math.floor(g.t * 20) % 2 === 0;
+    if (!blink) {
+      ctx.save(); ctx.translate(px, py); const ang = Math.atan2(p.dir.y, p.dir.x); ctx.rotate(ang);
+      if (this.kind === 'grass') { ctx.fillStyle = '#1B1430'; ctx.fillRect(-26, -6, 14, 12); C.rrect(ctx, -14, -12, 28, 24, 6); ctx.fillStyle = p.stunned > 0 ? '#999' : '#E63946'; ctx.fill(); ctx.fillStyle = '#FFD166'; ctx.fillRect(8, -8, 5, 16); ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.fillRect(-10, -9, 16, 4); }
+      else { ctx.fillStyle = '#6E7B8B'; ctx.fillRect(-4, -5, 22, 10); C.rrect(ctx, -16, -12, 26, 24, 8); ctx.fillStyle = p.stunned > 0 ? '#999' : '#3E7BFF'; ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(-12, -9, 14, 4); if (!p.stopped && p.stunned <= 0) { ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.beginPath(); ctx.moveTo(18, -4); ctx.lineTo(34, -16); ctx.lineTo(34, 16); ctx.lineTo(18, 4); ctx.fill(); } }
+      ctx.restore();
+    }
+    if (this.smear > 0) { ctx.save(); ctx.globalAlpha = Math.min(0.5, this.smear * 0.3); ctx.fillStyle = '#6B4A1E'; for (let k = 0; k < 6; k++) { ctx.beginPath(); ctx.ellipse((k * 97) % W, (k * 173 + 60) % H, 60, 40, k, 0, Math.PI * 2); ctx.fill(); } ctx.restore(); }
+    // HUD
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0, 0, W, oy - 6);
+    C.text(ctx, String(this.score), W / 2, 30, 32, '#FFF8EC');
+    const pct = Math.round(this.done / this.total * 100);
+    C.text(ctx, pct + ' %', 16, 30, 24, '#FFF8EC', 'left');
+    C.text(ctx, '♥'.repeat(Math.max(0, this.lives)) + '♡'.repeat(Math.max(0, 3 - this.lives)), W - 16, 30, 20, '#FF6B6B', 'right');
+    const q = this.time / 60; C.rrect(ctx, 16, 58, W - 32, 12, 6); ctx.fillStyle = 'rgba(255,255,255,.15)'; ctx.fill(); C.rrect(ctx, 16, 58, (W - 32) * q, 12, 6); ctx.fillStyle = q < 0.25 ? '#FF6B6B' : '#7ED957'; ctx.fill();
+    C.text(ctx, this.label + ' ' + Math.ceil(this.time) + ' s', W / 2, 82, 11, '#FFF8EC', 'center', C.F.ui, false);
+    C.text(ctx, 'MENY', 16, H - 20, 12, 'rgba(255,255,255,.6)', 'left', C.F.ui, false);
+  }
+  px() { const p = this.p; return this.cx(p.x) + (p.stopped || p.stunned > 0 ? 0 : p.dir.x * p.prog * this.cs); }
+  py() { const p = this.p; return this.cy(p.y) + (p.stopped || p.stunned > 0 ? 0 : p.dir.y * p.prog * this.cs); }
+  onSwipe(dir) { this.setDir(dir); }
+  onTap() {}
+}
+
+// ================================================================ Window wiping
+class WindowGame {
+  start() {
+    this.fx0 = 30; this.fy0 = 110; this.fw = g.W - 60; this.fh = g.H - 220; this.cs = 12;
+    this.cols = Math.floor(this.fw / this.cs); this.rows = Math.floor(this.fh / this.cs);
+    this.hp = new Array(this.cols * this.rows).fill(1); this.tint = new Array(this.cols * this.rows);
+    const r = C.rngStream(G.seed);
+    for (let i = 0; i < this.tint.length; i++) this.tint[i] = 0.75 + r() * 0.25;
+    for (let n = 0; n < 6; n++) this.splat(Math.floor(r() * this.cols), Math.floor(r() * this.rows), 3, r);
+    this.total = this.hp.length; this.time = 45; this.score = 0; this.over = false; this.t = 0; this.tickT = 0; this.lastHit = new Map();
+    this.bird = null; this.birdAt = 6; this.fly = null; this.flyAt = 4; this.finger = null; this.drips = []; this.birdsScared = 0; this.flies = 0;
+    C.ui.toast('Dra fingret över rutan. Regnet kommer om 45 s.', 2000);
+  }
+  splat(cx, cy, hp, r) { for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) { const x = cx + dx, y = cy + dy; if (x < 0 || y < 0 || x >= this.cols || y >= this.rows) continue; if (Math.hypot(dx, dy) <= 1.6 + (r ? r() : Math.random()) * 0.8) this.hp[y * this.cols + x] = Math.max(this.hp[y * this.cols + x], hp); } }
+  clean() { let c = 0; for (const h of this.hp) if (h <= 0) c++; return c; }
+  wipe(x, y) {
+    if (this.over) return; const lx = x - this.fx0, ly = y - this.fy0; if (lx < 0 || ly < 0 || lx > this.fw || ly > this.fh) return;
+    const cx = Math.floor(lx / this.cs), cy = Math.floor(ly / this.cs), R = 2; let any = false;
+    for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) { const px = cx + dx, py = cy + dy; if (px < 0 || py < 0 || px >= this.cols || py >= this.rows) continue; if (Math.hypot(dx, dy) > R + 0.3) continue; const i = py * this.cols + px; if (this.hp[i] <= 0) continue; const last = this.lastHit.get(i) || -1; if (g.t - last < 0.18) continue; this.lastHit.set(i, g.t); this.hp[i]--; if (this.hp[i] <= 0) { any = true; this.score += 2; } }
+    if (any) { if (g.t - this.tickT > 0.08) { this.tickT = g.t; C.haptics.tick(); C.audio.noise(0.05, 0.05, 2500); } if (Math.random() < 0.3) this.drips.push({ x, y, vy: 40 + Math.random() * 60, t: 0 }); }
+    if (this.clean() >= this.total * 0.97) this.end('done');
+  }
+  update(dt) {
+    if (this.over) return; this.t += dt; this.time -= dt; if (this.time <= 0) { this.time = 0; this.end('time'); return; }
+    if (!this.bird && this.t >= this.birdAt) { this.birdAt += 9; this.bird = { x: -30, t: 0, pooped: false, scared: false }; }
+    if (this.bird) { const b = this.bird; b.t += dt; b.x += dt * (b.scared ? 420 : 150); const y = this.birdY(); if (!b.pooped && !b.scared && b.x > g.W / 2) { b.pooped = true; for (let n = 0; n < 2; n++) this.splat(Math.floor(Math.random() * this.cols), Math.floor(Math.random() * this.rows), 3); g.fx.text(g.W / 2, y + 40, 'FÅGELBAJS! 💩', '#8B5A2B', 22, 1.2); g.fx.shake = 8; C.haptics.medium(); C.audio.splash(); } if (b.x > g.W + 40) this.bird = null; }
+    if (!this.fly && this.t >= this.flyAt) { this.flyAt += 7; this.fly = { x: this.fx0 + 20 + Math.random() * (this.fw - 40), y: this.fy0 + 20 + Math.random() * (this.fh - 40), t: 0 }; }
+    if (this.fly) { this.fly.t += dt; if (this.fly.t > 4) { const i = Math.floor((this.fly.y - this.fy0) / this.cs) * this.cols + Math.floor((this.fly.x - this.fx0) / this.cs); if (i >= 0 && i < this.hp.length) this.hp[i] = Math.max(this.hp[i], 2); this.fly = null; } }
+    for (const d of this.drips) { d.t += dt; d.y += d.vy * dt; } this.drips = this.drips.filter(d => d.t < 1.2);
+  }
+  birdY() { return this.fy0 + 30 + Math.sin(this.t * 3) * 8; }
+  tap(x, y) {
+    if (this.over) return;
+    if (this.bird && !this.bird.pooped && !this.bird.scared && Math.hypot(x - this.bird.x, y - this.birdY()) < 40) { this.bird.scared = true; this.score += 20; this.birdsScared++; g.fx.text(this.bird.x, this.birdY() - 30, 'SCHAS! +20', '#FFF8EC', 20); C.haptics.light(); C.audio.whoosh(); return; }
+    if (this.fly && Math.hypot(x - this.fly.x, y - this.fly.y) < 30) { this.score += 10; this.flies++; g.fx.text(this.fly.x, this.fly.y - 24, 'SMACK +10', '#FFF8EC', 18); g.fx.burst(this.fly.x, this.fly.y, 6, ['#333', '#777'], 120, 0.5); this.fly = null; C.haptics.light(); C.audio.pop(); return; }
+    this.wipe(x, y);
+  }
+  end(reason) {
+    this.over = true;
+    const pct = Math.round(this.clean() / this.total * 100);
+    let stars = reason === 'done' ? (this.time >= 15 ? 3 : 2) : pct >= 85 ? 1 : 0;
+    const bonus = reason === 'done' ? Math.round(this.time) * 5 : 0; this.score += bonus;
+    const lines = [pct + ' % blankt', reason === 'done' ? 'klart med ' + Math.round(this.time) + ' s kvar (+' + bonus + ')' : 'regnet kom', this.birdsScared + ' fåglar skrämda', this.flies + ' flugor'];
+    setTimeout(() => finishChore({ score: this.score, stars, lines }), 700);
+  }
+  render(ctx) {
+    const W = g.W, H = g.H, x0 = this.fx0, y0 = this.fy0, fw = this.fw, fh = this.fh;
+    ctx.fillStyle = '#F1E6D2'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(0,0,0,.06)'; for (let y = 0; y < H; y += 18) ctx.fillRect(0, y, W, 1);
+    // view through the window
+    const gr = ctx.createLinearGradient(0, y0, 0, y0 + fh); gr.addColorStop(0, '#5FB3DD'); gr.addColorStop(0.7, '#BFE8F7'); gr.addColorStop(0.72, '#6FAE4C'); gr.addColorStop(1, '#3E8E41');
+    ctx.fillStyle = gr; ctx.fillRect(x0, y0, fw, fh);
+    ctx.fillStyle = '#FFD166'; ctx.beginPath(); ctx.arc(x0 + fw * 0.78, y0 + fh * 0.2, 28, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.ellipse(x0 + fw * 0.3, y0 + fh * 0.32, 42, 14, 0, 0, Math.PI * 2); ctx.ellipse(x0 + fw * 0.36, y0 + fh * 0.29, 30, 16, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#E63946'; ctx.fillRect(x0 + fw * 0.55, y0 + fh * 0.6, 60, 48); ctx.fillStyle = '#8B5A2B'; ctx.beginPath(); ctx.moveTo(x0 + fw * 0.55 - 8, y0 + fh * 0.6); ctx.lineTo(x0 + fw * 0.55 + 30, y0 + fh * 0.6 - 30); ctx.lineTo(x0 + fw * 0.55 + 68, y0 + fh * 0.6); ctx.fill();
+    // dirt cells
+    for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.cols; x++) { const i = y * this.cols + x, h = this.hp[i]; if (h <= 0) continue; const a = h >= 3 ? 0.92 : h === 2 ? 0.8 : 0.62; ctx.fillStyle = 'rgba(' + (h >= 3 ? '80,55,30' : '110,95,80') + ',' + (a * this.tint[i]) + ')'; ctx.fillRect(x0 + x * this.cs, y0 + y * this.cs, this.cs + 0.5, this.cs + 0.5); }
+    // drips
+    for (const d of this.drips) { ctx.fillStyle = 'rgba(180,220,255,' + (1 - d.t / 1.2) + ')'; ctx.fillRect(d.x, d.y, 2, 8); }
+    // frame
+    ctx.lineWidth = 14; ctx.strokeStyle = '#8B5A2B'; ctx.strokeRect(x0 - 7, y0 - 7, fw + 14, fh + 14);
+    ctx.lineWidth = 6; ctx.strokeStyle = '#A5713A'; ctx.beginPath(); ctx.moveTo(x0 + fw / 2, y0); ctx.lineTo(x0 + fw / 2, y0 + fh); ctx.moveTo(x0, y0 + fh / 2); ctx.lineTo(x0 + fw, y0 + fh / 2); ctx.stroke();
+    if (this.bird) { const b = this.bird; C.emoji(ctx, b.scared ? '🐦' : '🐦', b.x, this.birdY(), 30); if (!b.pooped && !b.scared) C.text(ctx, 'TRYCK!', b.x, this.birdY() - 28, 12, '#8B5A2B', 'center', C.F.ui, false); }
+    if (this.fly) C.emoji(ctx, '🪰', this.fly.x + Math.sin(this.t * 30) * 2, this.fly.y, 20);
+    if (this.finger) { ctx.fillStyle = '#3E7BFF'; C.rrect(ctx, this.finger.x - 24, this.finger.y - 6, 48, 12, 4); ctx.fill(); ctx.fillStyle = '#1B1430'; ctx.fillRect(this.finger.x - 3, this.finger.y - 6, 6, -30); }
+    // HUD
+    const pct = Math.round(this.clean() / this.total * 100);
+    C.text(ctx, String(this.score), W / 2, 34, 32, '#3B2A1A', 'center', C.F.display, false);
+    C.text(ctx, pct + ' % BLANKT', 16, 34, 20, '#3B2A1A', 'left', C.F.display, false);
+    C.text(ctx, this.birdsScared + ' 🐦 · ' + this.flies + ' 🪰', W - 16, 34, 14, '#3B2A1A', 'right', C.F.ui, false);
+    const q = this.time / 45; C.rrect(ctx, 16, 60, W - 32, 12, 6); ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fill(); C.rrect(ctx, 16, 60, (W - 32) * q, 12, 6); ctx.fillStyle = q < 0.25 ? '#E63946' : '#3E7BFF'; ctx.fill();
+    C.text(ctx, 'REGNET KOMMER OM ' + Math.ceil(this.time) + ' s', W / 2, 86, 11, '#3B2A1A', 'center', C.F.ui, false);
+    C.text(ctx, 'MENY', 16, H - 20, 12, '#8B5A2B', 'left', C.F.ui, false);
+  }
+  onDown(x, y) { this.finger = { x, y }; this.wipe(x, y); }
+  onMove(x, y) { if (this.finger) { this.finger = { x, y }; const dx = x - (this.lastX ?? x), dy = y - (this.lastY ?? y); const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 8)); for (let k = 1; k <= n; k++) this.wipe(x - dx * (1 - k / n), y - dy * (1 - k / n)); } this.lastX = x; this.lastY = y; }
+  onUp() { this.finger = null; this.lastX = this.lastY = undefined; }
+  onTap(x, y) { this.tap(x, y); }
+  onSwipe() {}
+}
+
+// ================================================================ Laundry sorting
+const GARMENTS = ['shirt', 'sock', 'pants', 'dress', 'towel'];
+const COLORS = [
+  { n: 'vit', c: '#FAFAFA', white: true }, { n: 'ljusgrå', c: '#E3E3E3', white: true }, { n: 'ljusrosa', c: '#F9C6D3', white: false, trap: true },
+  { n: 'röd', c: '#E63946', white: false }, { n: 'blå', c: '#3E7BFF', white: false }, { n: 'grön', c: '#3ECF6E', white: false }, { n: 'gul', c: '#FFD23F', white: false }, { n: 'svart', c: '#333A44', white: false }, { n: 'cremevit', c: '#F6EEDC', white: true },
+];
+const BINS = { left: 'VITT', right: 'KULÖRT', up: 'FINTVÄTT', down: 'TRASIGT' };
+class Laundry {
+  start() { this.i = 0; this.total = 40; this.lives = 3; this.score = 0; this.combo = 0; this.mistakes = 0; this.item = null; this.leaving = []; this.flash = null; this.over = false; this.t = 0; this.spawn(); C.ui.toast('40 plagg. Vitt ⇠ · Kulört ⇢ · Fintvätt ⇡ · Trasigt ⇣', 2400); }
+  itemAt(i) { const r = C.rngAt(G.seed, i), a = r(), b = r(), c = r(), d = r(); const col = COLORS[Math.floor(b * COLORS.length)]; return { type: GARMENTS[Math.floor(a * GARMENTS.length)], col, delicate: i >= 5 && c < 0.16, holes: i >= 9 && d < 0.14, i }; }
+  expected(it) { return it.holes ? 'down' : it.delicate ? 'up' : it.col.white ? 'left' : 'right'; }
+  why(it) { return it.holes ? 'hål → trasigt ⇣' : it.delicate ? 'tvättlapp → fintvätt ⇡' : it.col.white ? it.col.n + ' = vitt ⇠' : it.col.n + ' = kulört ⇢'; }
+  spawn() { if (this.i >= this.total) { this.end('done'); return; } this.item = Object.assign(this.itemAt(this.i), { enter: 0 }); this.timerMax = Math.max(1.0, 2.6 - 0.03 * this.i); this.timer = this.timerMax; }
+  decide(dir) {
+    const it = this.item; if (!it || this.over) return; const exp = this.expected(it), ok = dir === exp;
+    it.dir = dir; it.t = 0; this.leaving.push(it); this.item = null; this.flash = { dir, ok, t: 0.3 };
+    const cx = g.W / 2, cy = g.H * 0.52;
+    if (ok) { this.combo++; const pts = 10 + 10 * Math.min(this.combo - 1, 9); this.score += pts; g.fx.text(cx, cy - 100, (this.combo >= 3 ? 'x' + this.combo + ' ' : '') + '+' + pts, '#7ED957', 24 + Math.min(this.combo, 8)); g.fx.ring(cx, cy, '#7ED957'); C.haptics.success(this.combo); C.audio.blip(this.combo); }
+    else { this.combo = 0; this.lives--; this.mistakes++; g.fx.text(cx, cy - 110, 'FEL HÖG!', '#FF6B6B', 30, 1.2); g.fx.text(cx, cy - 76, this.why(it), '#FFF8EC', 15, 2); g.fx.shake = 14; C.haptics.fail(); C.audio.buzz(); if (this.lives <= 0) { this.end('lives'); return; } }
+    this.i++; this.spawn();
+  }
+  timeout() { const it = this.item; if (!it) return; it.dir = 'down'; it.t = 0; it.slow = true; this.leaving.push(it); this.item = null; this.combo = 0; this.lives--; this.mistakes++; g.fx.text(g.W / 2, g.H * 0.52 - 110, 'FÖR LÅNGSAM!', '#FF6B6B', 28, 1.2); g.fx.text(g.W / 2, g.H * 0.52 - 76, this.why(it), '#FFF8EC', 15, 2); C.haptics.fail(); C.audio.buzz(); if (this.lives <= 0) { this.end('lives'); return; } this.i++; this.spawn(); }
+  update(dt) { if (this.over) return; this.t += dt; if (this.flash) { this.flash.t -= dt; if (this.flash.t <= 0) this.flash = null; } for (const l of this.leaving) l.t += dt; this.leaving = this.leaving.filter(l => l.t < 0.5); if (this.item) { this.item.enter = Math.min(1, this.item.enter + dt * 6); this.timer -= dt; if (this.timer <= 0) this.timeout(); } }
+  end(reason) { this.over = true; const stars = reason === 'lives' ? 0 : this.mistakes === 0 ? 3 : this.mistakes <= 2 ? 2 : 1; const lines = [this.i + ' av ' + this.total + ' plagg', this.mistakes + ' fel', reason === 'lives' ? 'mamma tog över' : 'tvätten är i gång']; setTimeout(() => finishChore({ score: this.score, stars, lines }), 700); }
+  drawGarment(ctx, it, x, y, alpha = 1) {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = it.col.c; ctx.strokeStyle = 'rgba(20,12,40,.45)'; ctx.lineWidth = 3;
+    const path = () => {
+      ctx.beginPath();
+      if (it.type === 'shirt') { ctx.moveTo(x - 50, y - 40); ctx.lineTo(x - 20, y - 52); ctx.quadraticCurveTo(x, y - 36, x + 20, y - 52); ctx.lineTo(x + 50, y - 40); ctx.lineTo(x + 62, y - 10); ctx.lineTo(x + 38, y); ctx.lineTo(x + 38, y + 50); ctx.lineTo(x - 38, y + 50); ctx.lineTo(x - 38, y); ctx.lineTo(x - 62, y - 10); ctx.closePath(); }
+      else if (it.type === 'sock') { ctx.moveTo(x - 18, y - 50); ctx.lineTo(x + 18, y - 50); ctx.lineTo(x + 18, y + 10); ctx.quadraticCurveTo(x + 22, y + 46, x - 10, y + 46); ctx.quadraticCurveTo(x - 40, y + 46, x - 36, y + 20); ctx.lineTo(x - 18, y + 10); ctx.closePath(); }
+      else if (it.type === 'pants') { ctx.moveTo(x - 40, y - 50); ctx.lineTo(x + 40, y - 50); ctx.lineTo(x + 44, y + 50); ctx.lineTo(x + 8, y + 50); ctx.lineTo(x, y - 6); ctx.lineTo(x - 8, y + 50); ctx.lineTo(x - 44, y + 50); ctx.closePath(); }
+      else if (it.type === 'dress') { ctx.moveTo(x - 26, y - 52); ctx.lineTo(x + 26, y - 52); ctx.lineTo(x + 20, y - 20); ctx.lineTo(x + 52, y + 52); ctx.lineTo(x - 52, y + 52); ctx.lineTo(x - 20, y - 20); ctx.closePath(); }
+      else { ctx.rect(x - 52, y - 40, 104, 80); }
+    };
+    path(); ctx.fill(); path(); ctx.stroke();
+    if (it.type === 'towel') { ctx.fillStyle = 'rgba(0,0,0,.12)'; for (let k = -30; k <= 30; k += 20) ctx.fillRect(x - 52, y + k - 3, 104, 6); }
+    if (it.delicate) { C.rrect(ctx, x + 18, y + 14, 40, 26, 5); ctx.fillStyle = '#FFF8EC'; ctx.fill(); ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.stroke(); C.text(ctx, '🧵', x + 38, y + 27, 16, '#333', 'center', C.F.emoji, false); }
+    if (it.holes) { ctx.fillStyle = '#1B1430'; for (const [dx, dy, r] of [[-12, -10, 7], [14, 18, 5], [-4, 30, 4]]) { ctx.beginPath(); ctx.arc(x + dx, y + dy, r, 0, Math.PI * 2); ctx.fill(); } }
+    ctx.restore();
+  }
+  render(ctx) {
+    const W = g.W, H = g.H, cy = H * 0.52;
+    ctx.fillStyle = '#2E3D31'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#E9E2D6'; ctx.fillRect(0, 0, W, 100); ctx.fillStyle = '#D6CDBD'; ctx.fillRect(0, 100, W, 6);
+    // bins
+    const zone = (dir, x, y, w, h, color, label, vertical) => { const f = this.flash && this.flash.dir === dir ? this.flash : null; ctx.save(); C.rrect(ctx, x, y, w, h, 12); ctx.fillStyle = f ? (f.ok ? 'rgba(126,217,87,.55)' : 'rgba(255,107,107,.6)') : 'rgba(255,255,255,.07)'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = f ? (f.ok ? '#7ED957' : '#FF6B6B') : color; ctx.stroke(); if (vertical) { ctx.translate(x + w / 2, y + h / 2); ctx.rotate(-Math.PI / 2); C.text(ctx, label, 0, 0, 20, color); } else C.text(ctx, label, x + w / 2, y + h / 2, 18, color); ctx.restore(); };
+    zone('left', 10, cy - 110, 48, 220, '#FAFAFA', '⇠ VITT', true); zone('right', W - 58, cy - 110, 48, 220, '#3E7BFF', 'KULÖRT ⇢', true);
+    zone('up', W / 2 - 90, 122, 180, 34, '#F9C6D3', 'FINTVÄTT ⇡', false); zone('down', W / 2 - 90, H - 74, 180, 34, '#8A8F98', 'TRASIGT ⇣', false);
+    // basket
+    ctx.fillStyle = '#A5713A'; C.rrect(ctx, W / 2 - 80, H - 130, 160, 40, 10); ctx.fill();
+    if (this.item) { const it = this.item, k = C.easeOut(it.enter), y = cy + (1 - k) * 200; this.drawGarment(ctx, it, W / 2, y); const p = Math.max(0, this.timer / this.timerMax); C.rrect(ctx, W / 2 - 60, y - 76, 120, 10, 5); ctx.fillStyle = 'rgba(255,255,255,.15)'; ctx.fill(); C.rrect(ctx, W / 2 - 60, y - 76, 120 * p, 10, 5); ctx.fillStyle = p < 0.3 ? '#FF6B6B' : '#7ED957'; ctx.fill(); }
+    for (const l of this.leaving) { const k = l.t / 0.5, d = l.dir, sp = l.slow ? 160 : 900; const dx = d === 'right' ? sp * l.t : d === 'left' ? -sp * l.t : 0, dy = d === 'up' ? -sp * l.t : d === 'down' ? sp * l.t * 0.6 : 0; ctx.save(); ctx.translate(W / 2 + dx, cy + dy); ctx.rotate((d === 'right' ? 1 : d === 'left' ? -1 : 0) * k * 0.8); ctx.translate(-W / 2, -cy); this.drawGarment(ctx, l, W / 2, cy, 1 - k); ctx.restore(); }
+    C.text(ctx, String(this.score), W / 2, 34, 32, '#3B2A1A', 'center', C.F.display, false);
+    C.text(ctx, '♥'.repeat(Math.max(0, this.lives)) + '♡'.repeat(Math.max(0, 3 - this.lives)), 16, 34, 22, '#E63946', 'left', C.F.display, false);
+    C.text(ctx, 'PLAGG ' + (this.i + 1) + '/' + this.total, W - 16, 34, 14, '#3B2A1A', 'right', C.F.ui, false);
+    if (this.combo >= 2) C.text(ctx, 'x' + this.combo, W - 16, 60, 22, '#E63946', 'right', C.F.display, false);
+    C.text(ctx, 'MENY', 16, H - 20, 12, 'rgba(255,255,255,.6)', 'left', C.F.ui, false);
+  }
+  onSwipe(dir) { this.decide(dir); }
+  onTap() { if (this.i < 2) C.ui.toast('Swipa plagget till rätt hög', 1200); }
+}
+
+// ================================================================ mount & wiring
+function update(dt) { if (G.screen === 'play' && G.game) G.game.update(dt); }
+function render(ctx) {
+  ctx.save(); g.fx.applyShake(ctx);
+  if (G.screen === 'play' && G.game) G.game.render(ctx);
+  else { const gr = ctx.createLinearGradient(0, 0, 0, g.H); gr.addColorStop(0, '#1F2A22'); gr.addColorStop(1, '#2E3D31'); ctx.fillStyle = gr; ctx.fillRect(0, 0, g.W, g.H); }
+  g.fx.draw(ctx); ctx.restore();
+}
+const g = C.mount({ ariaLabel: 'Sysslor spelplan',
+  onTap: (x, y) => { if (G.screen === 'play' && G.game) { if (x < 70 && y > g.H - 40) { goMenu(); return; } if (G.game.onTap) G.game.onTap(x, y); } else if (G.screen === 'over' && performance.now() > G.overReadyAt) { /* wait for buttons */ } },
+  onSwipe: (dir) => { if (G.screen === 'play' && G.game && G.game.onSwipe) G.game.onSwipe(dir); },
+  onDown: (x, y) => { if (G.screen === 'play' && G.game && G.game.onDown) G.game.onDown(x, y); },
+  onMove: (x, y, dx, dy) => { if (G.screen === 'play' && G.game && G.game.onMove) G.game.onMove(x, y, dx, dy); },
+  onUp: (x, y) => { if (G.screen === 'play' && G.game && G.game.onUp) G.game.onUp(x, y); },
+  update, render,
+  onKey: k => { if (k === 'Escape') { goMenu(); return true; } if ((k === ' ' || k === 'Enter') && G.screen === 'intro') { startChore(); return true; } return false; } });
+function refreshToggles() { C.ui.setText('bHap', 'Vibration: ' + (C.haptics.on ? 'på' : 'av')); C.ui.setText('bSnd', 'Ljud: ' + (C.audio.on ? 'på' : 'av')); }
+$('name0').value = G.names[0] || ''; $('name1').value = G.names[1] || '';
+for (const i of [0, 1]) { $('name' + i).addEventListener('input', e => { G.names[i] = e.target.value; S.set('names', G.names); renderHub(); }); $('who' + i).addEventListener('click', () => { G.who = i; S.set('who', i); renderHub(); C.haptics.tap(); }); }
+C.ui.bind('bStart', () => { G.screen = 'play'; startChore(); });
+C.ui.bind('bIntroBack', goMenu);
+C.ui.bind('bNext', () => { const d = dayData(), p = d['p' + G.who] || {}; const next = CHORES.find(c => !(p[c.id] && p[c.id].stars >= 1)); if (next) openIntro(next.id); else goMenu(); });
+C.ui.bind('bAgain', () => { C.ui.hideAll(); startChore(); });
+C.ui.bind('bShare', share); C.ui.bind('bMenu', goMenu);
+C.ui.bind('bHap', () => { C.haptics.on = !C.haptics.on; S.set('haptics', C.haptics.on); refreshToggles(); C.haptics.medium(); });
+C.ui.bind('bSnd', () => { C.audio.on = !C.audio.on; S.set('sound', C.audio.on); refreshToggles(); C.audio.blip(1); });
+const h = C.hash();
+if (h.get('c') && h.get('s')) { G.challenge = { chore: h.get('c'), seed: h.get('s'), score: parseInt(h.get('t') || '0', 10) || 0 }; setTimeout(() => C.ui.toast('Utmaning: slå ' + G.challenge.score + ' p på ' + (CHORES.find(c => c.id === G.challenge.chore) || {}).name, 3000), 300); }
+refreshToggles(); renderHub();
+window.__G = G;
+const boot = () => g.start();
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(boot); else boot();
+})();
+</script>
+</body>
+</html>

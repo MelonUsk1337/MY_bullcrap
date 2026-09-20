@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Dörrvakten</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@700;900&display=swap">
+<style>
+:root{--ground:#0F0A1E;--panel:rgba(12,7,26,.88);--cream:#FFF1F7;--dim:#B79CC9;--accent:#FF3E9A;--accent-shadow:#8A1550;--btn-text:#2A0A1C;--card:#251742;--card-dk:#170D2B;--line:#3F2A63;--how-cols:4;color-scheme:dark}
+</style>
+<script src="lib/core.js"></script>
+</head>
+<body>
+<div id="stage"><div id="box"><div id="frame">
+<div id="menu" class="ov">
+  <h1 class="logo">DÖRRVAKTEN</h1>
+  <p class="sub">Läs skylten. Swipa gästen åt rätt håll innan tålamodet tar slut. Reglerna byts. Ibland är det motsatt dag.</p>
+  <div class="how" aria-label="Så här spelar du">
+    <div><b>⇢</b>IN</div>
+    <div><b>⇠</b>NEJ</div>
+    <div><b>⇡</b>VIP</div>
+    <div><b>⇣</b>visitera</div>
+  </div>
+  <button class="btn" id="bPlay">SPELA</button>
+  <div class="row">
+    <button class="btn sec" id="bDaily">Dagens kö</button>
+    <button class="btn sec" id="bDuel">Turas om · 2 spelare</button>
+  </div>
+  <div class="row">
+    <button class="btn sec" id="bHap">Vibration: på</button>
+    <button class="btn sec" id="bSnd">Ljud: på</button>
+  </div>
+  <p class="small" id="bestLine"></p>
+  <p class="small" id="challengeLine" hidden></p>
+</div>
+<div id="over" class="ov" hidden>
+  <p class="tag" id="overTag">STÄNGT</p>
+  <p class="big" id="overScore">0</p>
+  <p class="sub" id="overSub"></p>
+  <button class="btn" id="bAgain">IGEN</button>
+  <button class="btn" id="bNextPlayer" hidden>SPELARE 2 – KÖR</button>
+  <div class="row">
+    <button class="btn sec" id="bShare">Utmana en vän</button>
+    <button class="btn sec" id="bMenu">Meny</button>
+  </div>
+  <input id="linkbox" class="linkbox" hidden readonly aria-label="Utmaningslänk">
+  <p class="small" id="overHint">Tryck var som helst för att köra igen</p>
+</div>
+<div id="toast" role="status"></div>
+</div></div></div>
+<script>
+(() => {
+'use strict';
+const C = Core, $ = C.$, fx = () => g.fx;
+const S = C.store('dorrvakten');
+C.haptics.on = S.get('haptics', true); C.audio.on = S.get('sound', true);
+
+const RULES = [
+  { attr: 'hat', positive: true, text: 'BARA HATTAR', why: h => h ? 'hatt' : 'ingen hatt' },
+  { attr: 'hat', positive: false, text: 'INGA HATTAR', why: h => h ? 'hatt' : 'ingen hatt' },
+  { attr: 'glasses', positive: true, text: 'BARA GLASÖGON', why: h => h ? 'glasögon' : 'inga glasögon' },
+  { attr: 'glasses', positive: false, text: 'INGA GLASÖGON', why: h => h ? 'glasögon' : 'inga glasögon' },
+  { attr: 'beard', positive: true, text: 'BARA SKÄGG', why: h => h ? 'skägg' : 'inget skägg' },
+  { attr: 'beard', positive: false, text: 'INGA SKÄGG', why: h => h ? 'skägg' : 'inget skägg' },
+  { attr: 'red', positive: true, text: 'BARA RÖDA TRÖJOR', why: h => h ? 'röd tröja' : 'inte röd' },
+  { attr: 'red', positive: false, text: 'INGA RÖDA TRÖJOR', why: h => h ? 'röd tröja' : 'inte röd' },
+];
+const SHIRTS = { red: '#FF4B3E', blue: '#3E7BFF', green: '#3ECF6E', yellow: '#FFD23F' };
+const SKINS = ['#F5C6A0', '#C68642', '#8D5524', '#FFDBAC', '#E0AC69', '#B5E7A0', '#9AD0F5'];
+const DIRS = { right: 'IN ⇢', left: 'NEJ ⇠', up: 'VIP ⇡', down: 'VISITERA ⇣' };
+const BLOCK = 8;
+
+const G = {
+  screen: 'menu', mode: 'free', seed: '', i: 0, guest: null, leaving: [], lives: 3, score: 0, combo: 0, bestCombo: 0,
+  timer: 0, timerMax: 0, flash: null, anim: null, duel: { turn: 0, scores: [0, 0] }, challengeSeed: null, challengeScore: 0,
+  hint: { vip: false, shady: false, opp: false }, pausedHint: 0, overReadyAt: 0,
+};
+
+// ---- deterministic content
+function ruleIdxAt(block) {
+  let idx = -1;
+  for (let b = 0; b <= block; b++) {
+    const r = C.rngAt(G.seed + '-rule', b); let n = Math.floor(r() * RULES.length);
+    if (n === idx) n = (n + 3) % RULES.length;
+    idx = n;
+  }
+  return idx;
+}
+const ruleAt = block => RULES[ruleIdxAt(block)];
+const oppositeAt = block => block >= 2 && C.rngAt(G.seed + '-opp', block)() < 0.28;
+function guestAt(i) {
+  const r = C.rngAt(G.seed, i), rule = ruleAt(Math.floor(i / BLOCK));
+  const a = r(), b = r(), c = r(), d = r(), e = r(), f = r(), h = r(), k = r();
+  const shirts = ['red', 'blue', 'green', 'yellow'];
+  const gst = { hat: c < 0.35, glasses: d < 0.35, beard: e < 0.35, shirt: shirts[Math.floor(b * 4)], vip: false, shady: false, skin: SKINS[Math.floor(k * SKINS.length)], i };
+  const has = a < 0.5;
+  if (rule.attr === 'red') gst.shirt = has ? 'red' : shirts[1 + Math.floor(f * 3)]; else gst[rule.attr] = has;
+  if (i >= 6 && h < 0.10) gst.vip = true; else if (i >= 12 && h > 0.90) gst.shady = true;
+  return gst;
+}
+function hasAttr(gst, attr) { return attr === 'red' ? gst.shirt === 'red' : !!gst[attr]; }
+function expected(gst) {
+  if (gst.vip) return 'up';
+  if (gst.shady) return 'down';
+  const block = Math.floor(gst.i / BLOCK), rule = ruleAt(block);
+  let inRule = rule.positive ? hasAttr(gst, rule.attr) : !hasAttr(gst, rule.attr);
+  if (oppositeAt(block)) inRule = !inRule;
+  return inRule ? 'right' : 'left';
+}
+function explain(gst) {
+  if (gst.vip) return 'VIP-stjärna → VIP ⇡';
+  if (gst.shady) return 'Skum typ → visitera ⇣';
+  const block = Math.floor(gst.i / BLOCK), rule = ruleAt(block);
+  return rule.text + (oppositeAt(block) ? ' (MOTSATT!)' : '') + ': ' + rule.why(hasAttr(gst, rule.attr)) + ' → ' + DIRS[expected(gst)];
+}
+
+// ---- flow
+function startRun(mode, seed) {
+  G.mode = mode; G.seed = seed; G.screen = 'play';
+  G.i = 0; G.guest = null; G.leaving = []; G.lives = 3; G.score = 0; G.combo = 0; G.bestCombo = 0; G.flash = null; G.anim = null;
+  G.hint = { vip: false, shady: false, opp: false }; G.pausedHint = 0;
+  C.ui.hideAll();
+  spawn();
+}
+function startGame(mode) {
+  const seed = mode === 'daily' ? 'daily-' + C.todayStr() : mode === 'challenge' ? G.challengeSeed : C.newSeed();
+  if (mode === 'duel') { G.duel = { turn: 0, scores: [0, 0] }; }
+  startRun(mode, seed);
+  C.ui.toast(mode === 'duel' ? 'Spelare 1 börjar. Spelare 2 får exakt samma kö.' : 'Läs skylten. Swipa!', 2000);
+}
+function spawn() {
+  const gst = guestAt(G.i);
+  const block = Math.floor(G.i / BLOCK);
+  G.guest = { g: gst, enter: 0, block };
+  G.timerMax = Math.max(1.1, 2.8 - 0.035 * G.i); G.timer = G.timerMax;
+  if (G.i % BLOCK === 0 && G.i > 0) { C.haptics.medium(); C.audio.pop(); G.signPop = 0.35; }
+  if (gst.vip && !G.hint.vip) { G.hint.vip = true; hintPause('VIP-STJÄRNA! Swipa UPP ⇡'); }
+  else if (gst.shady && !G.hint.shady) { G.hint.shady = true; hintPause('SKUM TYP! Swipa NER ⇣ = visitera'); }
+  else if (oppositeAt(block) && !G.hint.opp && G.i % BLOCK === 0) { G.hint.opp = true; hintPause('MOTSATT DAG! IN blir NEJ, NEJ blir IN'); }
+}
+function hintPause(msg) { G.pausedHint = 1.8; G.hintMsg = msg; C.haptics.big(); C.audio.ding(); }
+function decide(dir) {
+  const gu = G.guest; if (!gu || G.anim) return;
+  const exp = expected(gu.g), ok = dir === exp;
+  const cx = g.W / 2, cy = guestY();
+  gu.dir = dir; gu.t = 0; G.leaving.push(gu); G.guest = null;
+  G.flash = { dir, ok, t: 0.3 };
+  if (ok) {
+    G.combo++; G.bestCombo = Math.max(G.bestCombo, G.combo);
+    const pts = 10 + 10 * Math.min(G.combo - 1, 9); G.score += pts;
+    fx().text(cx, cy - 120, (G.combo >= 3 ? 'x' + G.combo + ' ' : '') + '+' + pts, '#3ECF6E', 24 + Math.min(G.combo, 8));
+    fx().ring(cx, cy - 40, '#3ECF6E'); C.haptics.success(G.combo); C.audio.blip(G.combo);
+    if (G.timer > G.timerMax * 0.6 && G.combo >= 2) { G.score += 5; fx().text(cx, cy - 150, 'SNABB! +5', '#FFF1F7', 16); }
+  } else {
+    G.combo = 0; G.lives--;
+    fx().text(cx, cy - 130, 'FEL!', '#FF3E9A', 34, 1.2);
+    fx().text(cx, cy - 95, explain(gu.g), '#FFF1F7', 15, 2.2);
+    fx().shake = 16; C.haptics.fail(); C.audio.buzz();
+    if (G.lives <= 0) { G.anim = { t: 0, dur: 0.8, after: showOver }; return; }
+  }
+  G.i++; spawn();
+}
+function timeout() {
+  const gu = G.guest; if (!gu) return;
+  gu.dir = 'down'; gu.t = 0; gu.slow = true; G.leaving.push(gu); G.guest = null;
+  G.combo = 0; G.lives--;
+  fx().text(g.W / 2, guestY() - 130, 'FÖR LÅNGSAM!', '#FF3E9A', 30, 1.2);
+  fx().text(g.W / 2, guestY() - 95, 'Gästen gick. ' + explain(gu.g), '#FFF1F7', 14, 2);
+  fx().shake = 10; C.haptics.fail(); C.audio.buzz();
+  if (G.lives <= 0) { G.anim = { t: 0, dur: 0.8, after: showOver }; return; }
+  G.i++; spawn();
+}
+function showOver() {
+  G.screen = 'over'; G.overReadyAt = performance.now() + 500;
+  const guests = G.i;
+  if (G.mode === 'duel') {
+    G.duel.scores[G.duel.turn] = G.score;
+    if (G.duel.turn === 0) {
+      C.ui.setText('overTag', 'SPELARE 1 KLAR'); C.ui.setText('overScore', String(G.score));
+      C.ui.setText('overSub', 'Spelare 2 får exakt samma kö. Slå ' + G.score + '!');
+      $('bAgain').hidden = true; $('bNextPlayer').hidden = false; $('bShare').hidden = true; $('overHint').hidden = true;
+    } else {
+      const [a, b] = G.duel.scores, w = a === b ? 0 : a > b ? 1 : 2;
+      C.ui.setText('overTag', w ? 'SPELARE ' + w + ' VANN' : 'OAVGJORT'); C.ui.setText('overScore', a + ' – ' + b);
+      C.ui.setText('overSub', 'Samma gäster, samma ordning. Kör en ny kö?');
+      $('bAgain').hidden = false; $('bAgain').textContent = 'NY DUELL'; $('bNextPlayer').hidden = true; $('bShare').hidden = true; $('overHint').hidden = false;
+    }
+    $('linkbox').hidden = true; C.ui.show('over'); return;
+  }
+  const key = G.mode === 'daily' ? 'daily.' + C.todayStr() : 'best';
+  const best = S.get(key, 0), rec = G.score > best; if (rec) S.set(key, G.score);
+  C.ui.setText('overTag', (G.mode === 'daily' ? 'DAGENS KÖ · ' : G.mode === 'challenge' ? 'UTMANING · ' : '') + 'KLUBBEN STÄNGDE');
+  C.ui.setText('overScore', String(G.score));
+  let sub = (rec ? 'NYTT REKORD!' : 'Bästa: ' + best) + ' · ' + guests + ' gäster' + (G.bestCombo >= 3 ? ' · combo x' + G.bestCombo : '');
+  if (G.mode === 'challenge') sub += G.score > G.challengeScore ? ' · Du slog din vän (' + G.challengeScore + ')! 🏆' : ' · Din vän hade ' + G.challengeScore + '.';
+  C.ui.setText('overSub', sub);
+  $('bAgain').hidden = false; $('bAgain').textContent = 'IGEN'; $('bNextPlayer').hidden = true; $('bShare').hidden = false; $('overHint').hidden = false; $('linkbox').hidden = true;
+  if (rec && best > 0) { C.haptics.win(); C.audio.fanfare(); }
+  updateBest(); C.ui.show('over');
+}
+function restart() {
+  if (G.mode === 'duel' && G.duel.turn === 0 && G.screen === 'over') { G.duel.turn = 1; startRun('duel', G.seed); C.ui.toast('Spelare 2: samma kö. Kör!', 1600); return; }
+  if (G.mode === 'duel') { startGame('duel'); return; }
+  startGame(G.mode);
+}
+function goMenu() { G.screen = 'menu'; C.ui.hideAll(); C.ui.show('menu'); updateBest(); }
+function updateBest() { const b = S.get('best', 0), d = S.get('daily.' + C.todayStr(), 0); C.ui.setText('bestLine', (b ? 'Bästa: ' + b : 'Inget rekord än') + (d ? ' · Dagens: ' + d : '')); }
+function share() {
+  const url = location.href.split('#')[0] + '#s=' + encodeURIComponent(G.seed) + '&t=' + G.score;
+  C.share({ text: 'DÖRRVAKTEN 🚪 Jag fick ' + G.score + ' p. Samma kö, slå mig:', url, linkboxId: 'linkbox' });
+}
+
+// ---- geometry
+const guestY = () => Math.round(g.H * 0.6);
+const signY = () => 96;
+
+// ---- update
+function update(dt) {
+  if (G.screen !== 'play') return;
+  if (G.signPop > 0) G.signPop -= dt;
+  if (G.flash) { G.flash.t -= dt; if (G.flash.t <= 0) G.flash = null; }
+  for (const l of G.leaving) l.t += dt;
+  G.leaving = G.leaving.filter(l => l.t < 0.5);
+  if (G.anim) { G.anim.t += dt; if (G.anim.t >= G.anim.dur) { const a = G.anim; G.anim = null; a.after(); } return; }
+  if (G.pausedHint > 0) { G.pausedHint -= dt; if (G.guest) G.guest.enter = Math.min(1, G.guest.enter + dt * 6); return; }
+  if (G.guest) {
+    G.guest.enter = Math.min(1, G.guest.enter + dt * 6);
+    G.timer -= dt;
+    if (G.timer <= 0) timeout();
+  }
+}
+
+// ---- render
+function drawGuest(ctx, gst, x, y, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  // legs
+  ctx.fillStyle = '#2A2140'; ctx.fillRect(x - 24, y + 60, 18, 40); ctx.fillRect(x + 6, y + 60, 18, 40);
+  // body
+  C.rrect(ctx, x - 36, y - 6, 72, 74, 14); ctx.fillStyle = SHIRTS[gst.shirt]; ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; C.rrect(ctx, x - 36, y + 50, 72, 18, 8); ctx.fill();
+  // arms
+  ctx.strokeStyle = SHIRTS[gst.shirt]; ctx.lineWidth = 14; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x - 30, y + 4); ctx.lineTo(x - 48, y + 46); ctx.moveTo(x + 30, y + 4); ctx.lineTo(x + 48, y + 46); ctx.stroke();
+  if (gst.shady) { // hand in pocket bulge
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(x + 20, y + 40, 14, 10, 0, 0, Math.PI * 2); ctx.fill();
+    C.text(ctx, '?', x + 20, y + 40, 16, '#FFF1F7');
+  }
+  if (gst.vip) { C.emoji(ctx, '⭐', x, y + 26, 26); }
+  // head
+  ctx.beginPath(); ctx.arc(x, y - 44, 32, 0, Math.PI * 2); ctx.fillStyle = gst.skin; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(20,12,40,.5)'; ctx.stroke();
+  // eyes
+  ctx.fillStyle = '#1B1430';
+  if (gst.shady) { ctx.fillRect(x - 20, y - 50, 14, 4); ctx.fillRect(x + 6, y - 50, 14, 4); ctx.beginPath(); ctx.arc(x - 9, y - 48, 3, 0, Math.PI * 2); ctx.arc(x + 17, y - 48, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#9AD0F5'; ctx.beginPath(); ctx.ellipse(x + 30, y - 62, 4, 7, 0, 0, Math.PI * 2); ctx.fill(); }
+  else { ctx.beginPath(); ctx.arc(x - 11, y - 48, 4, 0, Math.PI * 2); ctx.arc(x + 11, y - 48, 4, 0, Math.PI * 2); ctx.fill(); }
+  // mouth
+  ctx.strokeStyle = '#1B1430'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y - 34, 10, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+  if (gst.beard) { ctx.fillStyle = '#6B3F1D'; ctx.beginPath(); ctx.arc(x, y - 30, 22, 0, Math.PI); ctx.fill(); ctx.fillStyle = gst.skin; ctx.beginPath(); ctx.ellipse(x, y - 34, 12, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#1B1430'; ctx.beginPath(); ctx.arc(x, y - 34, 8, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); }
+  if (gst.glasses) { ctx.strokeStyle = '#1B1430'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x - 11, y - 48, 10, 0, Math.PI * 2); ctx.moveTo(x + 21, y - 48); ctx.arc(x + 11, y - 48, 10, 0, Math.PI * 2); ctx.moveTo(x - 1, y - 48); ctx.lineTo(x + 1, y - 48); ctx.stroke(); }
+  if (gst.hat) { ctx.fillStyle = '#2A2140'; C.rrect(ctx, x - 40, y - 74, 80, 10, 4); ctx.fill(); C.rrect(ctx, x - 24, y - 104, 48, 34, 6); ctx.fill(); ctx.fillStyle = '#FF3E9A'; ctx.fillRect(x - 24, y - 82, 48, 6); }
+  if (gst.vip) { C.emoji(ctx, '👑', x, y - 84 - (gst.hat ? 26 : 0), 30); }
+  ctx.restore();
+}
+function render(ctx) {
+  const W = g.W, H = g.H;
+  ctx.save(); fx().applyShake(ctx);
+  const gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#0F0A1E'); gr.addColorStop(1, '#2A1A4A');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  // floor
+  ctx.fillStyle = '#1B1233'; ctx.fillRect(0, guestY() + 100, W, H - guestY() - 100);
+  ctx.fillStyle = '#3F2A63'; ctx.fillRect(0, guestY() + 100, W, 4);
+  if (G.screen !== 'menu') {
+    // zones
+    const zone = (dir, x, y, w, h, color, label, vertical) => {
+      const f = G.flash && G.flash.dir === dir ? G.flash : null;
+      ctx.save();
+      C.rrect(ctx, x, y, w, h, 12); ctx.fillStyle = f ? (f.ok ? 'rgba(62,207,110,.55)' : 'rgba(255,62,154,.6)') : 'rgba(255,255,255,.06)'; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = f ? (f.ok ? '#3ECF6E' : '#FF3E9A') : color; ctx.stroke();
+      if (vertical) { ctx.translate(x + w / 2, y + h / 2); ctx.rotate(-Math.PI / 2); C.text(ctx, label, 0, 0, 22, color); }
+      else C.text(ctx, label, x + w / 2, y + h / 2, 20, color);
+      ctx.restore();
+    };
+    zone('right', W - 58, guestY() - 120, 48, 220, '#3ECF6E', 'IN ⇢', true);
+    zone('left', 10, guestY() - 120, 48, 220, '#FF4B3E', '⇠ NEJ', true);
+    zone('up', W / 2 - 90, signY() + 62, 180, 34, '#FFD23F', 'VIP ⇡', false);
+    zone('down', W / 2 - 90, H - 74, 180, 34, '#9AD0F5', 'VISITERA ⇣', false);
+    // sign
+    const block = Math.floor(G.i / BLOCK), rule = ruleAt(block), opp = oppositeAt(block);
+    ctx.save();
+    const pop = G.signPop > 0 ? 1 + 0.12 * Math.sin(G.signPop / 0.35 * Math.PI) : 1;
+    ctx.translate(W / 2, signY()); ctx.scale(pop, pop); ctx.translate(-W / 2, -signY());
+    C.rrect(ctx, 24, signY() - 30, W - 48, 60, 14); ctx.fillStyle = '#FFF1F7'; ctx.fill();
+    ctx.lineWidth = 5; ctx.strokeStyle = opp ? '#FF3E9A' : '#8A1550'; ctx.stroke();
+    if (opp) { ctx.translate(W / 2, signY()); ctx.rotate(Math.PI); ctx.translate(-W / 2, -signY()); }
+    C.text(ctx, rule.text, W / 2, signY() + (opp ? 0 : 0), 26, '#2A0A1C', 'center', C.F.display, false);
+    ctx.restore();
+    if (opp) C.text(ctx, 'MOTSATT DAG!', W / 2, signY() - 44, 18, '#FF3E9A');
+    // guest
+    if (G.guest) {
+      const gu = G.guest, k = C.easeOut(gu.enter), y = guestY() + (1 - k) * 220;
+      drawGuest(ctx, gu.g, W / 2, y, 1);
+      // timer
+      const p = Math.max(0, G.timer / G.timerMax);
+      C.rrect(ctx, W / 2 - 60, y - 130, 120, 10, 5); ctx.fillStyle = 'rgba(255,255,255,.15)'; ctx.fill();
+      C.rrect(ctx, W / 2 - 60, y - 130, 120 * p, 10, 5); ctx.fillStyle = p < 0.3 ? '#FF4B3E' : '#3ECF6E'; ctx.fill();
+      if (G.pausedHint > 0) {
+        C.rrect(ctx, 30, y - 200, W - 60, 46, 12); ctx.fillStyle = '#FFD23F'; ctx.fill();
+        C.text(ctx, G.hintMsg, W / 2, y - 177, 17, '#2A0A1C', 'center', C.F.display, false);
+      }
+    }
+    for (const l of G.leaving) {
+      const k = l.t / 0.5, d = l.dir, sp = l.slow ? 160 : 900;
+      const dx = d === 'right' ? sp * l.t : d === 'left' ? -sp * l.t : 0, dy = d === 'up' ? -sp * l.t : d === 'down' ? sp * l.t * 0.6 : 0;
+      ctx.save(); ctx.translate(W / 2 + dx, guestY() + dy); ctx.rotate((d === 'right' ? 1 : d === 'left' ? -1 : 0) * k * 0.8); ctx.translate(-W / 2, -guestY());
+      drawGuest(ctx, l.g, W / 2, guestY(), 1 - k); ctx.restore();
+    }
+    // HUD
+    C.text(ctx, '♥'.repeat(Math.max(0, G.lives)) + '♡'.repeat(Math.max(0, 3 - G.lives)), 16, 26, 22, '#FF3E9A', 'left');
+    C.text(ctx, String(G.score), W / 2, 30, 34, '#FFF1F7');
+    if (G.combo >= 2) { const pulse = 1 + 0.1 * Math.sin(g.t * 12); ctx.save(); ctx.translate(W - 30, 28); ctx.scale(pulse, pulse); C.text(ctx, 'x' + G.combo, 0, 0, 26, G.combo >= 5 ? '#FF3E9A' : '#FFD23F'); ctx.restore(); }
+    C.text(ctx, 'GÄST ' + (G.i + 1) + (G.mode === 'duel' ? ' · SPELARE ' + (G.duel.turn + 1) : ''), W / 2, 56, 12, '#B79CC9', 'center', C.F.ui);
+    C.text(ctx, 'MENY', 16, H - 20, 12, '#7F6F99', 'left', C.F.ui, false);
+  }
+  fx().draw(ctx);
+  ctx.restore();
+}
+
+// ---- input
+function onTap(x, y) {
+  if (G.screen === 'play') { if (x < 70 && y > g.H - 40) { goMenu(); return; } if (G.i < 2) C.ui.toast('Swipa gästen: ⇢ in, ⇠ nej, ⇡ VIP, ⇣ visitera', 1800); }
+  else if (G.screen === 'over' && performance.now() > G.overReadyAt) restart();
+}
+function onSwipe(dir) {
+  if (G.screen !== 'play' || G.anim || G.pausedHint > 0) return;
+  decide(dir);
+}
+const g = C.mount({ ariaLabel: 'Dörrvakten spelplan', onTap, onSwipe, update, render, onKey: k => { if (k === 'Escape') { goMenu(); return true; } if ((k === ' ' || k === 'Enter') && G.screen === 'menu') { startGame(G.challengeSeed ? 'challenge' : 'free'); return true; } return false; } });
+
+// ---- wiring
+function refreshToggles() { C.ui.setText('bHap', 'Vibration: ' + (C.haptics.on ? 'på' : 'av')); C.ui.setText('bSnd', 'Ljud: ' + (C.audio.on ? 'på' : 'av')); }
+const h = C.hash();
+if (h.get('s')) { G.challengeSeed = h.get('s'); G.challengeScore = parseInt(h.get('t') || '0', 10) || 0; $('challengeLine').hidden = false; C.ui.setText('challengeLine', 'Utmaning från en vän: slå ' + G.challengeScore + ' p på exakt samma kö. SPELA startar utmaningen.'); C.ui.setText('bPlay', 'TA UTMANINGEN'); }
+C.ui.bind('bPlay', () => startGame(G.challengeSeed ? 'challenge' : 'free'));
+C.ui.bind('bDaily', () => startGame('daily'));
+C.ui.bind('bDuel', () => startGame('duel'));
+C.ui.bind('bHap', () => { C.haptics.on = !C.haptics.on; S.set('haptics', C.haptics.on); refreshToggles(); C.haptics.medium(); });
+C.ui.bind('bSnd', () => { C.audio.on = !C.audio.on; S.set('sound', C.audio.on); refreshToggles(); C.audio.blip(1); });
+C.ui.bind('bAgain', restart); C.ui.bind('bNextPlayer', restart); C.ui.bind('bShare', share); C.ui.bind('bMenu', goMenu);
+C.ui.overlayTap('over', () => { if (performance.now() > G.overReadyAt && !(G.mode === 'duel' && G.duel.turn === 0)) restart(); });
+refreshToggles(); updateBest();
+const boot = () => g.start();
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(boot); else boot();
+})();
+</script>
+</body>
+</html>

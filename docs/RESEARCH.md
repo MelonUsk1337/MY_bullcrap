@@ -1,6 +1,6 @@
 # Casual-spel som fastnar: research, fem idéer och valet
 
-*Sammanställt 2026-09-19. Syfte: hitta det optimalt "beroendeframkallande" men enkla mobilspelet för korta sessioner (tunnelbanan), styrt med swipe/tap, med haptik, en galen twist och ett gemensamt moment. Resultatet blev **HANGRY** – prototypen ligger i `game/index.html`.*
+*Sammanställt 2026-09-19, uppdaterat 2026-09-20. Syfte: hitta det optimalt "beroendeframkallande" men enkla mobilspelet för korta sessioner (tunnelbanan), styrt med swipe/tap, med haptik, en galen twist och ett gemensamt moment. Vinnaren blev **HANGRY**, men alla fem idéer är nu byggda som prototyper (se `game/README.md`), plus **Sysslor** – gamification av vardagssysslor (`docs/CHORES.md`).*
 
 ---
 

@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Sushi-kast</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@700;900&display=swap">
+<style>
+:root{--ground:#2B1D14;--panel:rgba(30,18,10,.88);--cream:#FFF6E5;--dim:#C9B8A3;--accent:#E63946;--accent-shadow:#8F1D26;--btn-text:#FFFFFF;--card:#4A3324;--card-dk:#33231A;--line:#6B4B36;--how-cols:3;color-scheme:dark}
+</style>
+<script src="lib/core.js"></script>
+</head>
+<body>
+<div id="stage"><div id="box"><div id="frame">
+<div id="menu" class="ov">
+  <h1 class="logo">SUSHI-KAST</h1>
+  <p class="sub">Fyra gäster, fyra håll. Swipa tallriken till den som beställt. Katten stjäl. Wasabi skrämmer katten.</p>
+  <div class="how" aria-label="Så här spelar du">
+    <div><b>⇠⇡⇢⇣</b>kasta till gästen</div>
+    <div><b>🐱</b>inte till katten</div>
+    <div><b>🟢</b>wasabi → katten</div>
+  </div>
+  <button class="btn" id="bPlay">SPELA</button>
+  <div class="row">
+    <button class="btn sec" id="bDaily">Dagens meny</button>
+    <button class="btn sec" id="bDuel">Duell · delad skärm</button>
+  </div>
+  <div class="row">
+    <button class="btn sec" id="bHap">Vibration: på</button>
+    <button class="btn sec" id="bSnd">Ljud: på</button>
+  </div>
+  <p class="small" id="bestLine"></p>
+  <p class="small" id="challengeLine" hidden></p>
+</div>
+<div id="over" class="ov" hidden>
+  <p class="tag" id="overTag">STÄNGT</p>
+  <p class="big" id="overScore">0</p>
+  <p class="sub" id="overSub"></p>
+  <button class="btn" id="bAgain">IGEN</button>
+  <div class="row">
+    <button class="btn sec" id="bShare">Utmana en vän</button>
+    <button class="btn sec" id="bMenu">Meny</button>
+  </div>
+  <input id="linkbox" class="linkbox" hidden readonly aria-label="Utmaningslänk">
+  <p class="small">Tryck var som helst för att köra igen</p>
+</div>
+<div id="toast" role="status"></div>
+</div></div></div>
+<script>
+(() => {
+'use strict';
+const C = Core, $ = C.$;
+const S = C.store('sushi');
+C.haptics.on = S.get('haptics', true); C.audio.on = S.get('sound', true);
+const ITEMS = ['🍣', '🍙', '🍤', '🥟', '🍵', '🍡', '🍜', '🍰'];
+const WASABI = '🟢';
+const SKINS = ['#F5C6A0', '#C68642', '#8D5524', '#FFDBAC', '#E0AC69', '#B5E7A0', '#9AD0F5', '#F5A3C7'];
+const OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
+const DUEL_TIME = 45;
+
+const G = { screen: 'menu', mode: 'free', seed: '', tables: [], anim: null, overReadyAt: 0, challengeSeed: null, challengeScore: 0, duelClock: 0, winner: -1 };
+
+// ---------------------------------------------------------------- table
+class Table {
+  constructor(tag, cx, cy, dirs, throwDir, player) {
+    this.tag = tag; this.cx = cx; this.cy = cy; this.throwDir = throwDir; this.player = player;
+    this.seats = {}; this.i = 0; this.lives = 3; this.score = 0; this.combo = 0; this.bestCombo = 0;
+    this.plate = null; this.queue = []; this.flying = []; this.timer = 0; this.timerMax = 0; this.catUntil = -1; this.catDir = null;
+    this.rngWish = C.rngStream(G.seed + tag + '-wish'); this.dead = false; this.hintCat = false; this.enter = 0;
+    let n = 0;
+    for (const d of dirs) { this.seats[d] = { dir: d, wish: null, mood: 0, moodT: 0, skin: SKINS[(n * 3 + tag.length) % SKINS.length], cat: false, bob: n * 1.3 }; n++; }
+    this.reassignWishes();
+  }
+  freeSeats() { return Object.values(this.seats).filter(s => !s.cat); }
+  reassignWishes() { const used = new Set(); for (const s of Object.values(this.seats)) { s.wish = this.pickWish(used); used.add(s.wish); } }
+  pickWish(used) { let w; for (let k = 0; k < 20; k++) { w = ITEMS[Math.floor(this.rngWish() * ITEMS.length)]; if (!used.has(w)) break; } return w; }
+  seatPos(dir) {
+    const R = 128, ry = 150;
+    return dir === 'up' ? { x: this.cx, y: this.cy - ry } : dir === 'down' ? { x: this.cx, y: this.cy + ry } : dir === 'left' ? { x: this.cx - R, y: this.cy } : { x: this.cx + R, y: this.cy };
+  }
+  spawn() {
+    const i = this.i++;
+    const r = C.rngAt(G.seed + this.tag, i), a = r(), b = r(), c = r();
+    // cat visits from plate 8, every 9th plate, stays 5 plates
+    if (i >= 8 && i % 9 === 0) { const seats = Object.keys(this.seats); this.catDir = seats[Math.floor(b * seats.length)]; this.seats[this.catDir].cat = true; this.catUntil = i + 5; if (!this.hintCat) { this.hintCat = true; C.ui.toast('KATT! Kasta inte sushi till katten. Wasabi 🟢 skrämmer bort den.', 2600); C.haptics.big(); C.audio.meow(); } }
+    if (this.catDir && i >= this.catUntil) { this.seats[this.catDir].cat = false; this.catDir = null; }
+    let item, target;
+    if (this.queue.length) { item = this.queue.shift(); target = null; }
+    else if (this.catDir && a < 0.4) { item = WASABI; target = this.catDir; }
+    else { const free = this.freeSeats(); const s = free[Math.floor(c * free.length)]; item = s.wish; target = s.dir; }
+    this.plate = { item, x: this.cx, y: this.cy, born: g.t, thrown: !!this.queue.length && false };
+    this.timerMax = Math.max(0.9, 2.6 - 0.03 * i); this.timer = this.timerMax;
+  }
+  serve(dir) {
+    const p = this.plate; if (!p || this.dead) return;
+    const seat = this.seats[dir];
+    if (!seat) {
+      if (dir === this.throwDir) { const other = G.tables[1 - this.player]; if (other && !other.dead) { other.queue.push(p.item); other.flash = { t: 0.5, msg: 'INKOMMANDE!' }; this.fly(dir, p.item); this.plate = null; g.fx.text(this.cx, this.cy - 50, 'KASTAD!', '#FFF6E5', 20); C.haptics.light(); C.audio.whoosh(); this.spawn(); } }
+      return;
+    }
+    this.fly(dir, p.item); this.plate = null;
+    const sp = this.seatPos(dir);
+    let ok;
+    if (seat.cat) {
+      if (p.item === WASABI) { ok = true; seat.cat = false; this.catDir = null; g.fx.text(sp.x, sp.y - 60, 'KATTEN FLYDDE! +30', '#3ECF6E', 20); this.score += 30; g.fx.burst(sp.x, sp.y, 18, ['#3ECF6E', '#FFF6E5'], 220, 0.6); C.audio.meow(); }
+      else { ok = null; g.fx.text(sp.x, sp.y - 60, 'MJAU! Katten åt den', '#FFD23F', 16, 1.4); this.combo = 0; C.audio.meow(); C.haptics.light(); }
+    } else if (p.item === WASABI) { ok = false; g.fx.text(sp.x, sp.y - 60, 'WASABI I ÖGAT!', '#E63946', 18, 1.4); seat.mood = -1; seat.moodT = 1; }
+    else if (seat.wish === p.item) { ok = true; seat.mood = 1; seat.moodT = 0.8; const used = new Set(Object.values(this.seats).map(s => s.wish)); seat.wish = this.pickWish(used); }
+    else { ok = false; seat.mood = -1; seat.moodT = 1; g.fx.text(sp.x, sp.y - 60, 'FEL GÄST!', '#E63946', 20, 1.2); }
+    if (ok === true) {
+      this.combo++; this.bestCombo = Math.max(this.bestCombo, this.combo);
+      const pts = 10 + 10 * Math.min(this.combo - 1, 9); this.score += pts;
+      g.fx.text(this.cx, this.cy - 60, (this.combo >= 3 ? 'x' + this.combo + ' ' : '') + '+' + pts, '#3ECF6E', 24 + Math.min(this.combo, 8));
+      g.fx.ring(sp.x, sp.y, '#3ECF6E'); C.haptics.success(this.combo); C.audio.blip(this.combo);
+    } else if (ok === false) {
+      this.combo = 0; this.lives--; g.fx.shake = 14; C.haptics.fail(); C.audio.buzz();
+      if (this.lives <= 0) { this.die(); return; }
+    }
+    this.spawn();
+  }
+  timeout() {
+    const p = this.plate; if (!p) return;
+    this.plate = null; this.combo = 0; this.lives--;
+    g.fx.text(this.cx, this.cy - 60, 'KALLT! 🥶', '#9AD0F5', 24, 1.2); g.fx.shake = 8; C.haptics.fail(); C.audio.buzz();
+    if (this.lives <= 0) { this.die(); return; }
+    this.spawn();
+  }
+  die() { this.dead = true; this.plate = null; onTableDead(this); }
+  fly(dir, item) { const sp = dir === this.throwDir ? (dir === 'up' ? { x: this.cx, y: this.cy - 260 } : { x: this.cx, y: this.cy + 260 }) : this.seatPos(dir); this.flying.push({ item, x0: this.cx, y0: this.cy, x1: sp.x, y1: sp.y, t: 0 }); }
+  update(dt) {
+    this.enter = Math.min(1, this.enter + dt * 3);
+    for (const f of this.flying) f.t += dt * 4;
+    this.flying = this.flying.filter(f => f.t < 1);
+    for (const s of Object.values(this.seats)) if (s.moodT > 0) { s.moodT -= dt; if (s.moodT <= 0) s.mood = 0; }
+    if (this.flash) { this.flash.t -= dt; if (this.flash.t <= 0) this.flash = null; }
+    if (this.dead || !this.plate) return;
+    this.timer -= dt; if (this.timer <= 0) this.timeout();
+  }
+  draw(ctx) {
+    const cx = this.cx, cy = this.cy;
+    // table
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(cx, cy + 6, 96, 60, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx, cy, 96, 58, 0, 0, Math.PI * 2); ctx.fillStyle = '#8B5A2B'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx, cy, 84, 48, 0, 0, Math.PI * 2); ctx.fillStyle = '#A5713A'; ctx.fill();
+    ctx.restore();
+    // seats
+    for (const s of Object.values(this.seats)) {
+      const p = this.seatPos(s.dir), bob = Math.sin(g.t * 3 + s.bob) * 2;
+      if (s.cat) {
+        C.emoji(ctx, this.plate && this.plate.item === WASABI ? '🙀' : '😼', p.x, p.y + bob, 54);
+        C.text(ctx, 'KATT', p.x, p.y + 42, 12, '#FFD23F', 'center', C.F.ui);
+      } else {
+        ctx.beginPath(); ctx.arc(p.x, p.y + 10 + bob, 30, 0, Math.PI * 2); ctx.fillStyle = s.skin; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(20,12,40,.5)'; ctx.stroke();
+        ctx.fillStyle = '#E63946'; ctx.fillRect(p.x - 30, p.y - 12 + bob, 60, 8);
+        ctx.fillStyle = '#1B1430';
+        if (s.mood > 0) { ctx.beginPath(); ctx.arc(p.x - 10, p.y + 6 + bob, 5, Math.PI, 0); ctx.arc(p.x + 10, p.y + 6 + bob, 5, Math.PI, 0); ctx.lineWidth = 3; ctx.strokeStyle = '#1B1430'; ctx.stroke(); ctx.beginPath(); ctx.arc(p.x, p.y + 16 + bob, 9, 0, Math.PI); ctx.fillStyle = '#1B1430'; ctx.fill(); }
+        else if (s.mood < 0) { ctx.beginPath(); ctx.arc(p.x - 10, p.y + 6 + bob, 4, 0, Math.PI * 2); ctx.arc(p.x + 10, p.y + 6 + bob, 4, 0, Math.PI * 2); ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#1B1430'; ctx.beginPath(); ctx.moveTo(p.x - 18, p.y - 4 + bob); ctx.lineTo(p.x - 4, p.y + bob); ctx.moveTo(p.x + 18, p.y - 4 + bob); ctx.lineTo(p.x + 4, p.y + bob); ctx.stroke(); ctx.beginPath(); ctx.arc(p.x, p.y + 24 + bob, 8, Math.PI, 0); ctx.stroke(); }
+        else { ctx.beginPath(); ctx.arc(p.x - 10, p.y + 6 + bob, 4, 0, Math.PI * 2); ctx.arc(p.x + 10, p.y + 6 + bob, 4, 0, Math.PI * 2); ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#1B1430'; ctx.beginPath(); ctx.arc(p.x, p.y + 16 + bob, 7, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); }
+        // wish bubble
+        const bx = s.dir === 'left' ? p.x + 4 : s.dir === 'right' ? p.x - 4 : p.x, by = p.y - 52 + bob;
+        C.rrect(ctx, bx - 26, by - 22, 52, 44, 12); ctx.fillStyle = '#FFF6E5'; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(bx - 8, by + 20); ctx.lineTo(bx + 8, by + 20); ctx.lineTo(bx, by + 30); ctx.closePath(); ctx.fill();
+        C.emoji(ctx, s.wish, bx, by, 28);
+      }
+    }
+    // throw direction hint
+    if (this.throwDir) { const y = this.throwDir === 'up' ? cy - 150 : cy + 150; C.text(ctx, (this.throwDir === 'up' ? '⇡ ' : '⇣ ') + 'KASTA TILL MOTSTÅNDAREN', cx, y, 12, '#C9B8A3', 'center', C.F.ui); }
+    // flying plates
+    for (const f of this.flying) { const k = C.easeOut(f.t), x = C.lerp(f.x0, f.x1, k), y = C.lerp(f.y0, f.y1, k) - Math.sin(k * Math.PI) * 30; ctx.save(); ctx.globalAlpha = 1 - k * 0.6; ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fillStyle = '#FFF6E5'; ctx.fill(); C.emoji(ctx, f.item, x, y, 24); ctx.restore(); }
+    // plate
+    if (this.plate) {
+      const p = this.plate, age = g.t - p.born, pop = age < 0.15 ? C.easeOut(age / 0.15) : 1;
+      const q = Math.max(0, this.timer / this.timerMax);
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(pop, pop);
+      ctx.beginPath(); ctx.arc(0, 0, 40, 0, Math.PI * 2); ctx.fillStyle = '#FFF6E5'; ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, 32, 0, Math.PI * 2); ctx.fillStyle = '#F1E4CC'; ctx.fill();
+      C.emoji(ctx, p.item, 0, 0, 38);
+      ctx.beginPath(); ctx.arc(0, 0, 46, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * q); ctx.lineWidth = 6; ctx.strokeStyle = q < 0.3 ? '#E63946' : '#3ECF6E'; ctx.stroke();
+      ctx.restore();
+      if (p.item === WASABI) C.text(ctx, 'WASABI → KATTEN', cx, cy + 62, 14, '#3ECF6E');
+    }
+    if (this.flash) C.text(ctx, this.flash.msg, cx, cy - 70, 22, '#E63946');
+    // per-table HUD
+    const hy = this.player === 1 ? 24 : (G.tables.length > 1 ? this.cy - g.H / 4 + 24 : 24);
+    if (G.tables.length > 1) {
+      const top = this.cy - g.H / 4;
+      C.text(ctx, '♥'.repeat(Math.max(0, this.lives)) + '♡'.repeat(Math.max(0, 3 - this.lives)), 16, top + 20, 18, '#E63946', 'left');
+      C.text(ctx, String(this.score), cx, top + 22, 26, '#FFF6E5');
+      C.text(ctx, 'SPELARE ' + (this.player + 1), g.W - 16, top + 20, 14, this.player === 0 ? '#FFD23F' : '#9AD0F5', 'right');
+      if (this.dead) { ctx.save(); ctx.globalAlpha = 0.55; ctx.fillStyle = '#000'; ctx.fillRect(0, top, g.W, g.H / 2); ctx.restore(); C.text(ctx, 'UTE', cx, cy, 44, '#E63946'); }
+    }
+  }
+}
+
+// ---------------------------------------------------------------- flow
+function startGame(mode) {
+  G.mode = mode; G.screen = 'play'; G.anim = null; G.winner = -1;
+  G.seed = mode === 'daily' ? 'daily-' + C.todayStr() : mode === 'challenge' ? G.challengeSeed : C.newSeed();
+  G.tables = [];
+  if (mode === 'duel') {
+    G.tables.push(new Table('-p1', g.W / 2, g.H * 0.75, ['left', 'right', 'down'], 'up', 0));
+    G.tables.push(new Table('-p2', g.W / 2, g.H * 0.25, ['left', 'right', 'up'], 'down', 1));
+    G.duelClock = DUEL_TIME;
+    C.ui.toast('Nedre halvan = spelare 1, övre = spelare 2. Swipa mot mitten = kasta till motståndaren.', 3200);
+  } else {
+    G.tables.push(new Table('', g.W / 2, g.H * 0.5, ['up', 'down', 'left', 'right'], null, 0));
+  }
+  for (const t of G.tables) t.spawn();
+  C.ui.hideAll();
+}
+function onTableDead(t) {
+  if (G.mode === 'duel') { if (G.tables.every(x => x.dead) || true) { G.winner = 1 - t.player; G.anim = { t: 0, dur: 0.8, after: showOver }; } }
+  else G.anim = { t: 0, dur: 0.8, after: showOver };
+}
+function showOver() {
+  G.screen = 'over'; G.overReadyAt = performance.now() + 500;
+  if (G.mode === 'duel') {
+    const [a, b] = G.tables.map(t => t.score);
+    if (G.winner < 0) G.winner = a === b ? -1 : a > b ? 0 : 1;
+    C.ui.setText('overTag', G.winner < 0 ? 'OAVGJORT' : 'SPELARE ' + (G.winner + 1) + ' VANN');
+    C.ui.setText('overScore', a + ' – ' + b);
+    C.ui.setText('overSub', 'Spelare 1 nere, spelare 2 uppe. Revansch?');
+    $('bShare').hidden = true; $('bAgain').textContent = 'REVANSCH';
+  } else {
+    const t = G.tables[0], key = G.mode === 'daily' ? 'daily.' + C.todayStr() : 'best';
+    const best = S.get(key, 0), rec = t.score > best; if (rec) S.set(key, t.score);
+    C.ui.setText('overTag', (G.mode === 'daily' ? 'DAGENS MENY · ' : G.mode === 'challenge' ? 'UTMANING · ' : '') + 'KÖKET STÄNGDE');
+    C.ui.setText('overScore', String(t.score));
+    let sub = (rec ? 'NYTT REKORD!' : 'Bästa: ' + best) + ' · ' + t.i + ' tallrikar' + (t.bestCombo >= 3 ? ' · combo x' + t.bestCombo : '');
+    if (G.mode === 'challenge') sub += t.score > G.challengeScore ? ' · Du slog din vän (' + G.challengeScore + ')! 🏆' : ' · Din vän hade ' + G.challengeScore + '.';
+    C.ui.setText('overSub', sub); $('bShare').hidden = false; $('bAgain').textContent = 'IGEN';
+    if (rec && best > 0) { C.haptics.win(); C.audio.fanfare(); }
+    updateBest();
+  }
+  $('linkbox').hidden = true; C.ui.show('over');
+}
+function restart() { startGame(G.mode); }
+function goMenu() { G.screen = 'menu'; C.ui.hideAll(); C.ui.show('menu'); updateBest(); }
+function updateBest() { const b = S.get('best', 0), d = S.get('daily.' + C.todayStr(), 0); C.ui.setText('bestLine', (b ? 'Bästa: ' + b : 'Inget rekord än') + (d ? ' · Dagens: ' + d : '')); }
+function share() { const t = G.tables[0]; const url = location.href.split('#')[0] + '#s=' + encodeURIComponent(G.seed) + '&t=' + t.score; C.share({ text: 'SUSHI-KAST 🍣 Jag fick ' + t.score + ' p. Samma meny, slå mig:', url, linkboxId: 'linkbox' }); }
+
+// ---------------------------------------------------------------- loop
+function update(dt) {
+  if (G.screen !== 'play') return;
+  if (G.anim) { G.anim.t += dt; if (G.anim.t >= G.anim.dur) { const a = G.anim; G.anim = null; a.after(); } return; }
+  for (const t of G.tables) t.update(dt);
+  if (G.mode === 'duel') { G.duelClock -= dt; if (G.duelClock <= 0) { G.winner = -1; G.anim = { t: 0, dur: 0.3, after: showOver }; } }
+}
+function render(ctx) {
+  const W = g.W, H = g.H;
+  ctx.save(); g.fx.applyShake(ctx);
+  const gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#2B1D14'); gr.addColorStop(1, '#3E2A1C');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,246,229,.05)';
+  for (let y = 0; y < H; y += 48) ctx.fillRect(0, y, W, 2);
+  if (G.screen !== 'menu') {
+    if (G.mode === 'duel') { ctx.fillStyle = '#E63946'; ctx.fillRect(0, H / 2 - 3, W, 6); C.text(ctx, Math.ceil(G.duelClock) + ' s', W / 2, H / 2, 16, '#FFF6E5'); }
+    for (const t of G.tables) t.draw(ctx);
+    if (G.mode !== 'duel') {
+      const t = G.tables[0];
+      C.text(ctx, '♥'.repeat(Math.max(0, t.lives)) + '♡'.repeat(Math.max(0, 3 - t.lives)), 16, 26, 22, '#E63946', 'left');
+      C.text(ctx, String(t.score), W / 2, 30, 34, '#FFF6E5');
+      if (t.combo >= 2) { const pulse = 1 + 0.1 * Math.sin(g.t * 12); ctx.save(); ctx.translate(W - 30, 28); ctx.scale(pulse, pulse); C.text(ctx, 'x' + t.combo, 0, 0, 26, t.combo >= 5 ? '#E63946' : '#FFD23F'); ctx.restore(); }
+      C.text(ctx, 'TALLRIK ' + t.i, W / 2, 56, 12, '#C9B8A3', 'center', C.F.ui);
+    }
+    C.text(ctx, 'MENY', 16, H - 20, 12, '#8E7A66', 'left', C.F.ui, false);
+  }
+  g.fx.draw(ctx);
+  ctx.restore();
+}
+function tableFor(s) { if (G.mode !== 'duel') return G.tables[0]; return s.sy < g.H / 2 ? G.tables[1] : G.tables[0]; }
+function onTap(x, y) {
+  if (G.screen === 'play') { if (x < 70 && y > g.H - 40) { goMenu(); return; } C.ui.toast('Swipa tallriken mot gästen som vill ha den', 1400); }
+  else if (G.screen === 'over' && performance.now() > G.overReadyAt) restart();
+}
+function onSwipe(dir, s) { if (G.screen !== 'play' || G.anim) return; const t = tableFor(s); if (t) t.serve(dir); }
+const g = C.mount({ ariaLabel: 'Sushi-kast spelplan', onTap, onSwipe, update, render, onKey: k => {
+  if (k === 'Escape') { goMenu(); return true; }
+  if ((k === ' ' || k === 'Enter') && G.screen === 'menu') { startGame(G.challengeSeed ? 'challenge' : 'free'); return true; }
+  const wasd = { w: 'up', a: 'left', s: 'down', d: 'right' }[k.toLowerCase ? k.toLowerCase() : k];
+  if (wasd && G.mode === 'duel' && G.screen === 'play') { G.tables[1].serve(wasd); return true; }
+  return false; } });
+
+function refreshToggles() { C.ui.setText('bHap', 'Vibration: ' + (C.haptics.on ? 'på' : 'av')); C.ui.setText('bSnd', 'Ljud: ' + (C.audio.on ? 'på' : 'av')); }
+const h = C.hash();
+if (h.get('s')) { G.challengeSeed = h.get('s'); G.challengeScore = parseInt(h.get('t') || '0', 10) || 0; $('challengeLine').hidden = false; C.ui.setText('challengeLine', 'Utmaning från en vän: slå ' + G.challengeScore + ' p på exakt samma meny. SPELA startar utmaningen.'); C.ui.setText('bPlay', 'TA UTMANINGEN'); }
+C.ui.bind('bPlay', () => startGame(G.challengeSeed ? 'challenge' : 'free'));
+C.ui.bind('bDaily', () => startGame('daily'));
+C.ui.bind('bDuel', () => startGame('duel'));
+C.ui.bind('bHap', () => { C.haptics.on = !C.haptics.on; S.set('haptics', C.haptics.on); refreshToggles(); C.haptics.medium(); });
+C.ui.bind('bSnd', () => { C.audio.on = !C.audio.on; S.set('sound', C.audio.on); refreshToggles(); C.audio.blip(1); });
+C.ui.bind('bAgain', restart); C.ui.bind('bShare', share); C.ui.bind('bMenu', goMenu);
+C.ui.overlayTap('over', () => { if (performance.now() > G.overReadyAt) restart(); });
+refreshToggles(); updateBest();
+const boot = () => g.start();
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(boot); else boot();
+})();
+</script>
+</body>
+</html>

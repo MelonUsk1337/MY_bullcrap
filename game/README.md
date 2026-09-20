@@ -1,51 +1,51 @@
-# HANGRY – prototyp v0.1
+# Prototyper – sex casual-spel för swipe, tap och vibration
 
-Stapla burgaren upp till kundens mun. Tap släpper lagret, swipe åt sidan slänger skräp, swipe upp serverar. En enda HTML-fil, inga beroenden, inga assets (ljud syntetiseras, grafik ritas på canvas).
+Alla är enskilda HTML-sidor utan byggsteg. `lib/core.js` är det delade kärnbiblioteket (canvas, input, haptik, syntljud, effekter, seedad slump, menyer, delning). `lib/matter.min.js` (MIT) används bara av Jenga-huset.
 
-**Spela direkt på mobilen:** https://claude.ai/artifact/84VJfD8Z6pqzhaHLNVNHgF
-(privat länk – dela från sidans Share-meny om fler ska testa).
+| Spel | Fil | Spela på mobilen | Mekanik | Tvåspelarläge |
+|---|---|---|---|---|
+| HANGRY | `hangry.html` | https://claude.ai/artifact/84VJfD8Z6pqzhaHLNVNHgF | Tap = släpp, ⇠⇢ = släng skräp, ⇡ = servera, ⇣ = slam | Turas om på samma burgare, den som rasar förlorar |
+| Dörrvakten | `dorrvakten.html` | https://claude.ai/artifact/YGMrf1N1EF8hFWdmVNZjZE | ⇢ in, ⇠ nej, ⇡ VIP, ⇣ visitera; regler byts var 8:e gäst, motsatt dag | Turas om, samma kö, jämför poäng |
+| Sushi-kast | `sushi.html` | https://claude.ai/artifact/FNdfGTkRzdds2EXWSSWuFC | Swipa tallriken mot gästen som beställt; katt och wasabi | Delad skärm samtidigt, swipe mot mitten kastar till motståndaren |
+| Jenga-huset | `jenga.html` | https://claude.ai/artifact/PEFHgZyow47GhH6ytZrSdZ | Tap = släpp våning (Matter.js-fysik), ⇠⇢ = knuffa tornet, ⇡ = skräm duvan; jordbävning var 8:e våning | Turas om, den vars våning fäller huset förlorar |
+| Tunnelbanan | `tunnelbanan.html` | https://claude.ai/artifact/XymYkqzoTjbrM7dDGJnsr3 | ⇡⇣ = flippa gravitation, ⇢ = rusa; tåg, hinder, mynt, nära-miss-bonus | Kompisens spöke via länk (flipp-tidslinje i URL:en), turas om med spöke |
+| Sysslor (Chores) | `chores.html` | https://claude.ai/artifact/F8BthVPjQrCCbYaSyR29N6 | Fyra sysslor: gräs (snake-swipe), fönster (dra), tvätt (swipe-sortering), dammsuga (snake-swipe) | Två profiler, samma smuts per dag, hushållets poängtavla, städ-streak |
+
+Länkarna är privata artifacts. Dela från sidans Share-meny om fler ska testa. Alla spel har även "Dagens utmaning" (samma seed för alla) och "Utmana en vän" (länk med seed + poäng att slå).
 
 ## Köra lokalt
 
 ```bash
 cd game
 python3 -m http.server 8080
-# öppna http://<din-dators-ip>:8080 på mobilen (samma wifi)
+# öppna http://<din-dators-ip>:8080 på mobilen (samma wifi) – index.html listar alla sex
 ```
 
-Fungerar även genom att öppna `index.html` direkt i en webbläsare. På desktop: mellanslag = tap, piltangenter = swipe, Esc = meny.
-
-## Styrning
-
-| Gest | Effekt |
-|---|---|
-| Tap | Släpp biten |
-| Swipe ⇣ | Slam (snabbare fall, bonus) |
-| Swipe ⇠ / ⇢ | Släng biten. Skräp = +5. Mat = kunden tar en tugga (översta lagret krymper 25 %) |
-| Swipe ⇡ | Servera tidigt (≥ 3 lager, ej i duell) |
-| Tap på "MENY" nere till vänster | Tillbaka till menyn |
-
-## Lägen
-
-- **Spela** – ny slumpad seed varje runda, rekord sparas lokalt.
-- **Dagens utmaning** – seed = dagens datum, alla får samma burgare, eget dagsrekord.
-- **Utmana en vän** – efter game over: länk med `#s=SEED&t=POÄNG`. Vännen får exakt samma bit-sekvens och ser "ATT SLÅ".
-- **Duell · 2 spelare** – samma mobil, turas om per bit. Den som får burgaren att rasa eller staplar skräp förlorar rundan. Vinster räknas tills man går till menyn.
-
-## Tuning
-
-Alla konstanter ligger i `CFG` överst i skriptet: startbredd, perfekt-tolerans, återväxt, svängfart och ramp, kundaptiter, skräp- och guldsannolikhet, swipe-tröskel. Haptik-mönster i `haptics`, ljud i `audio`, kundens repliker i `SAY`.
+På desktop: mellanslag = tap, piltangenter = swipe, Esc = meny. Sushi-duell: WASD styr övre halvan.
 
 ## Haptik
 
-- **Android (Chrome):** `navigator.vibrate` med mönster – fungerar efter första trycket.
-- **iPhone:** Safari saknar vibrations-API. Canvasen ligger i en `<label>` kopplad till en `<input type="checkbox" switch>`, vilket ger systemets haptiska tick vid varje riktigt tryck (iOS 17.4+). Händelse-tick via script fungerar bara på iOS ≤ 26.4. För riktig haptik (Light/Medium/Heavy) krävs en native-wrapper – Capacitor + `@capacitor/haptics`.
-- Vibration och ljud kan stängas av i menyn (sparas lokalt).
+- Android Chrome: `navigator.vibrate` med mönster, fungerar efter första trycket.
+- iPhone: Safari saknar vibrations-API. Canvasen ligger i en `<label>` kopplad till `<input type="checkbox" switch>`, som ger systemets haptiska tick vid varje riktigt tryck (iOS 17.4+). Script-tick vid händelser fungerar bara på iOS ≤ 26.4. Riktig haptik (Light/Medium/Heavy) kräver Capacitor + `@capacitor/haptics`.
+- Vibration och ljud kan stängas av i varje meny (sparas lokalt per spel).
 
-## Nästa steg (förslag, i ordning)
+## Tuning
 
-1. Testa på riktiga telefoner: 10-sekunderstestet, rundlängd, omstarter per session (se `docs/RESEARCH.md` §9).
-2. Justera ramp och skräpfrekvens efter testet.
-3. Grafik: riktiga ingredienser i stället för emoji, kundkaraktärer, bakgrund.
-4. Streak för dagens utmaning, kompisens spöke (spara tap-tidslinje per seed).
-5. Capacitor-paketering med riktig haptik, sedan Play (sluten test) och App Store.
+Konstanterna ligger överst i varje spels skript (`CFG`, `SEG`, `LOT_W`, klassernas `start()`), haptik-mönster i `Core.haptics`, ljud i `Core.audio`. Repliker och regler ligger i `SAY`, `RULES`, `CHORES`.
+
+## Struktur
+
+```
+game/
+  index.html        nav till alla sex
+  hangry.html       fristående (eget inbyggt kärnbibliotek, äldst)
+  dorrvakten.html   sushi.html  jenga.html  tunnelbanan.html  chores.html
+  lib/core.js       delat kärnbibliotek
+  lib/matter.min.js fysik (MIT, matter-js 0.20.0)
+```
+
+## Nästa steg
+
+1. Testa alla sex på riktiga telefoner enligt mätpunkterna i `docs/RESEARCH.md` §9 och `docs/CHORES.md`.
+2. Välj 1–2 att gå vidare med. Flytta HANGRY till `lib/core.js` om den blir vald.
+3. Grafik, ljud och karaktärer. Sedan Capacitor-paketering med riktig haptik.

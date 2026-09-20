@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Tunnelbanan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@700;900&display=swap">
+<style>
+:root{--ground:#0E1626;--panel:rgba(8,14,26,.9);--cream:#F2F5F7;--dim:#9FB0C3;--accent:#FF6B35;--accent-shadow:#9E3A12;--btn-text:#1A0A00;--card:#1E2A40;--card-dk:#131B2B;--line:#33445F;--how-cols:3;color-scheme:dark}
+</style>
+<script src="lib/core.js"></script>
+</head>
+<body>
+<div id="stage"><div id="box"><div id="frame">
+<div id="menu" class="ov">
+  <h1 class="logo">TUNNELBANAN</h1>
+  <p class="sub">Du springer i tunneln med konduktören hack i häl. Byt mellan golv och tak. Tågen tar den som står på fel sida.</p>
+  <div class="how" aria-label="Så här spelar du">
+    <div><b>⇡ ⇣</b>flippa gravitationen</div>
+    <div><b>⇢</b>rusa (odödlig 0,7 s)</div>
+    <div><b>👻</b>kompisens spöke springer med</div>
+  </div>
+  <button class="btn" id="bPlay">SPRING</button>
+  <div class="row">
+    <button class="btn sec" id="bDaily">Dagens linje</button>
+    <button class="btn sec" id="bDuel">Turas om · 2 spelare</button>
+  </div>
+  <div class="row">
+    <button class="btn sec" id="bHap">Vibration: på</button>
+    <button class="btn sec" id="bSnd">Ljud: på</button>
+  </div>
+  <p class="small" id="bestLine"></p>
+  <p class="small" id="challengeLine" hidden></p>
+</div>
+<div id="over" class="ov" hidden>
+  <p class="tag" id="overTag">FAST</p>
+  <p class="big" id="overScore">0</p>
+  <p class="sub" id="overSub"></p>
+  <button class="btn" id="bAgain">IGEN</button>
+  <button class="btn" id="bNextPlayer" hidden>SPELARE 2 – SPRING</button>
+  <div class="row">
+    <button class="btn sec" id="bShare">Utmana med spöke</button>
+    <button class="btn sec" id="bMenu">Meny</button>
+  </div>
+  <input id="linkbox" class="linkbox" hidden readonly aria-label="Utmaningslänk">
+  <p class="small" id="overHint">Tryck var som helst för att köra igen</p>
+</div>
+<div id="toast" role="status"></div>
+</div></div></div>
+<script>
+(() => {
+'use strict';
+const C = Core, $ = C.$;
+const S = C.store('tunnelbanan');
+C.haptics.on = S.get('haptics', true); C.audio.on = S.get('sound', true);
+const SEG = 240, PX = 90, DASH_T = 0.7, DASH_CD = 4;
+const FLOOR_OBS = [{ e: '🪑', w: 44, h: 40 }, { e: '🐀', w: 40, h: 26 }, { e: '🗑️', w: 40, h: 44 }, { e: '🚧', w: 44, h: 40 }];
+const CEIL_OBS = [{ e: '💡', w: 36, h: 44 }, { e: '🦇', w: 44, h: 30 }, { e: '🔩', w: 34, h: 40 }];
+
+const G = { screen: 'menu', mode: 'free', seed: '', d: 0, v: 0, side: 0, flip: null, y: 0, dash: 0, dashCd: 0, lives: 3, coins: 0, score: 0, inv: 0,
+  segs: new Map(), items: [], flips: [], ghost: null, ghostSide: 0, ghostFlip: null, ghostDead: false, ghostIdx: 0, anim: null, overReadyAt: 0,
+  duel: { turn: 0, scores: [0, 0], ghost: null }, challengeSeed: null, challengeScore: 0, challengeGhost: null, near: 0, lastFlipD: -999, conductor: 3 };
+const floorY = () => Math.round(g.H * 0.72), ceilY = () => Math.round(g.H * 0.30);
+const sideY = s => s === 0 ? floorY() : ceilY();
+
+function startRun(mode, seed, ghost) {
+  G.mode = mode; G.seed = seed; G.screen = 'play';
+  G.d = 0; G.v = 260; G.side = 0; G.flip = null; G.y = floorY(); G.dash = 0; G.dashCd = 0; G.lives = 3; G.coins = 0; G.score = 0; G.inv = 0;
+  G.segs = new Map(); G.items = []; G.flips = []; G.anim = null; G.near = 0; G.lastFlipD = -999;
+  G.ghost = ghost || null; G.ghostSide = 0; G.ghostFlip = null; G.ghostDead = false; G.ghostIdx = 0;
+  C.ui.hideAll();
+}
+function startGame(mode) {
+  let seed = mode === 'daily' ? 'daily-' + C.todayStr() : mode === 'challenge' ? G.challengeSeed : C.newSeed();
+  let ghost = null;
+  if (mode === 'challenge') ghost = G.challengeGhost;
+  else if (mode === 'daily') ghost = S.get('ghost.' + seed, null);
+  if (mode === 'duel') { G.duel = { turn: 0, scores: [0, 0], ghost: null }; }
+  startRun(mode, seed, ghost);
+  C.ui.toast(mode === 'duel' ? 'Spelare 1 springer först. Spelare 2 får samma tunnel och spelare 1:s spöke.' : ghost ? 'Spöket är ' + (mode === 'daily' ? 'ditt bästa dagslopp' : 'din väns lopp') + '. Slå det!' : 'Swipa upp/ner för att byta sida. Höger = rusa.', 2600);
+}
+// deterministic segment content
+function segAt(k) {
+  if (G.segs.has(k)) return G.segs.get(k);
+  const r = C.rngAt(G.seed, k), a = r(), b = r(), c = r(), d = r();
+  const items = [];
+  const x0 = k * SEG;
+  if (k >= 3) {
+    const diff = Math.min(1, k / 60);
+    if (a < 0.16 + diff * 0.1) { const side = b < 0.5 ? 0 : 1; items.push({ kind: 'train', side, x: x0 + 40, w: 260 + Math.floor(c * 120), h: 70 }); }
+    else if (a < 0.62 + diff * 0.2) {
+      const side = b < 0.5 ? 0 : 1, o = side === 0 ? FLOOR_OBS[Math.floor(c * FLOOR_OBS.length)] : CEIL_OBS[Math.floor(c * CEIL_OBS.length)];
+      items.push({ kind: 'obs', side, x: x0 + 60 + Math.floor(d * 100), w: o.w, h: o.h, e: o.e });
+      if (diff > 0.25 && d > 0.55) { const o2 = side === 1 ? FLOOR_OBS[Math.floor(c * FLOOR_OBS.length)] : CEIL_OBS[Math.floor(b * CEIL_OBS.length)]; items.push({ kind: 'obs', side: 1 - side, x: x0 + 60 + Math.floor(d * 100) + 150 + Math.floor(diff * 40), w: o2.w, h: o2.h, e: o2.e }); }
+    }
+    if (a > 0.5 || k < 6) { const side = c < 0.5 ? 0 : 1; const busy = items.some(it => it.side === side && it.kind === 'train'); if (!busy) for (let n = 0; n < 5; n++) items.push({ kind: 'coin', side, x: x0 + 30 + n * 36, w: 18, h: 18 }); }
+  } else if (k > 0) { for (let n = 0; n < 5; n++) items.push({ kind: 'coin', side: 0, x: x0 + 30 + n * 36, w: 18, h: 18 }); }
+  G.segs.set(k, items); return items;
+}
+function flipTo(side) {
+  if (G.side === side && !G.flip) return;
+  if (G.flip) { return; }
+  G.side = side; G.flip = { from: sideY(1 - side), to: sideY(side), t: 0 }; G.flips.push(Math.round(G.d)); G.lastFlipD = G.d;
+  C.haptics.light(); C.audio.whoosh();
+}
+function dash() {
+  if (G.dashCd > 0 || G.dash > 0) { C.ui.toast('Rusning laddar…', 700); return; }
+  G.dash = DASH_T; G.dashCd = DASH_CD; C.haptics.medium(); C.audio.sparkle();
+  g.fx.text(PX + 40, G.y - 60, 'RUSA!', '#FF6B35', 24, 0.7);
+}
+function hit(it) {
+  if (G.inv > 0 || G.dash > 0) return;
+  it.dead = true; G.lives--; G.inv = 1.2; g.fx.shake = 16; C.haptics.fail(); C.audio.buzz();
+  g.fx.burst(PX + 10, G.y - 20, 16, ['#FF6B35', '#F2F5F7'], 240, 0.7);
+  g.fx.text(PX + 20, G.y - 80, it.kind === 'train' ? 'TÅÅÅG!' : 'AJ!', '#FF6B35', 30, 1);
+  if (G.lives <= 0) { G.anim = { t: 0, dur: 0.9, after: showOver }; }
+}
+function collide(px0, px1, py0, py1, it) { const ix0 = it.x, ix1 = it.x + it.w; const s = it.side; const iy1 = s === 0 ? floorY() : ceilY() + it.h, iy0 = s === 0 ? floorY() - it.h : ceilY(); return px1 > ix0 && px0 < ix1 && py1 > iy0 && py0 < iy1; }
+function update(dt) {
+  if (G.screen !== 'play') return;
+  if (G.anim) { G.anim.t += dt; if (G.anim.t >= G.anim.dur) { const a = G.anim; G.anim = null; a.after(); } return; }
+  const spd = G.v * (G.dash > 0 ? 1.8 : 1);
+  G.d += spd * dt; G.v = Math.min(620, 260 + G.d * 0.045);
+  if (G.dash > 0) G.dash -= dt; if (G.dashCd > 0) G.dashCd -= dt; if (G.inv > 0) G.inv -= dt;
+  if (G.flip) { G.flip.t += dt / 0.22; if (G.flip.t >= 1) { G.y = G.flip.to; G.flip = null; } else G.y = C.lerp(G.flip.from, G.flip.to, C.easeInOut(G.flip.t)); }
+  // ghost replay
+  if (G.ghost && !G.ghostDead) {
+    while (G.ghostIdx < G.ghost.flips.length && G.ghost.flips[G.ghostIdx] <= G.d) { G.ghostSide ^= 1; G.ghostFlip = { from: sideY(1 - G.ghostSide), to: sideY(G.ghostSide), t: 0 }; G.ghostIdx++; }
+    if (G.ghostFlip) { G.ghostFlip.t += dt / 0.22; if (G.ghostFlip.t >= 1) G.ghostFlip = null; }
+    if (G.d >= G.ghost.dist) { G.ghostDead = true; g.fx.text(PX - 30, sideY(G.ghostSide) - 70, 'SPÖKET DOG HÄR · ' + Math.round(G.ghost.dist / 10) + ' m', '#9FB0C3', 16, 2); g.fx.burst(PX - 30, sideY(G.ghostSide) - 20, 12, ['#9FB0C3'], 160, 0.8); C.haptics.light(); C.audio.pop(); }
+  }
+  // items in view
+  const k0 = Math.floor((G.d - 100) / SEG), k1 = Math.floor((G.d + g.W + 100) / SEG);
+  const px0 = PX - 14, px1 = PX + 14, py0 = G.side === 0 ? G.y - 44 : G.y, py1 = G.side === 0 ? G.y : G.y + 44;
+  for (let k = Math.max(0, k0); k <= k1; k++) for (const it of segAt(k)) {
+    if (it.dead) continue;
+    const sx = it.x - G.d + PX;
+    if (it.kind === 'coin') { if (collide(G.d + px0 - PX, G.d + px1 - PX, py0, py1, it)) { it.dead = true; G.coins++; G.score += 10; C.haptics.tick(); C.audio.tone(1200 + G.coins % 5 * 100, 0.08, 'square', 0.05); g.fx.burst(sx, sideY(it.side) + (it.side === 0 ? -20 : 20), 4, ['#FFD166'], 120, 0.4, 300); } continue; }
+    const wx0 = G.d + px0 - PX, wx1 = G.d + px1 - PX;
+    if (collide(wx0, wx1, py0, py1, it)) hit(it);
+    else if (!it.near && it.side !== G.side && it.x + it.w < wx0 && G.d - G.lastFlipD < 90 && G.lastFlipD > it.x - 140) { it.near = true; G.score += 5; G.near++; g.fx.text(PX + 30, (G.side === 0 ? G.y - 90 : G.y + 90), 'NÄRA! +5', '#FFD166', 20, 0.7); C.haptics.tick(); C.audio.ding(); }
+  }
+  G.score = Math.round(G.d / 10) + G.coins * 10 + G.near * 5;
+}
+function showOver() {
+  G.screen = 'over'; G.overReadyAt = performance.now() + 500;
+  const run = { flips: G.flips.slice(), dist: Math.round(G.d), score: G.score };
+  const m = Math.round(G.d / 10);
+  if (G.mode === 'duel') {
+    G.duel.scores[G.duel.turn] = G.score;
+    if (G.duel.turn === 0) {
+      G.duel.ghost = run;
+      C.ui.setText('overTag', 'SPELARE 1 KLAR'); C.ui.setText('overScore', String(G.score)); C.ui.setText('overSub', m + ' m. Spelare 2 springer samma tunnel med spelare 1:s spöke. Slå ' + G.score + '!');
+      $('bAgain').hidden = true; $('bNextPlayer').hidden = false; $('bShare').hidden = true; $('overHint').hidden = true;
+    } else {
+      const [a, b] = G.duel.scores, w = a === b ? 0 : a > b ? 1 : 2;
+      C.ui.setText('overTag', w ? 'SPELARE ' + w + ' VANN' : 'OAVGJORT'); C.ui.setText('overScore', a + ' – ' + b); C.ui.setText('overSub', 'Samma tunnel. Ny duell?');
+      $('bAgain').hidden = false; $('bAgain').textContent = 'NY DUELL'; $('bNextPlayer').hidden = true; $('bShare').hidden = true; $('overHint').hidden = false;
+    }
+    $('linkbox').hidden = true; C.ui.show('over'); return;
+  }
+  const key = G.mode === 'daily' ? 'daily.' + C.todayStr() : 'best';
+  const best = S.get(key, 0), rec = G.score > best; if (rec) S.set(key, G.score);
+  const gk = 'ghost.' + G.seed, gb = S.get(gk, null); if (!gb || gb.score < G.score) S.set(gk, run);
+  G.lastRun = run;
+  C.ui.setText('overTag', (G.mode === 'daily' ? 'DAGENS LINJE · ' : G.mode === 'challenge' ? 'UTMANING · ' : '') + 'KONDUKTÖREN TOG DIG');
+  C.ui.setText('overScore', String(G.score));
+  let sub = (rec ? 'NYTT REKORD!' : 'Bästa: ' + best) + ' · ' + m + ' m · ' + G.coins + ' mynt' + (G.near ? ' · ' + G.near + ' nära' : '');
+  if (G.mode === 'challenge') sub += G.score > G.challengeScore ? ' · Du slog din vän (' + G.challengeScore + ')! 🏆' : ' · Din vän hade ' + G.challengeScore + '.';
+  C.ui.setText('overSub', sub);
+  $('bAgain').hidden = false; $('bAgain').textContent = 'IGEN'; $('bNextPlayer').hidden = true; $('bShare').hidden = false; $('overHint').hidden = false; $('linkbox').hidden = true;
+  if (rec && best > 0) { C.haptics.win(); C.audio.fanfare(); }
+  updateBest(); C.ui.show('over');
+}
+function restart() {
+  if (G.mode === 'duel' && G.duel.turn === 0 && G.screen === 'over') { G.duel.turn = 1; startRun('duel', G.seed, G.duel.ghost); C.ui.toast('Spelare 2: samma tunnel, spöket är spelare 1.', 1800); return; }
+  if (G.mode === 'duel') { startGame('duel'); return; }
+  if (G.mode === 'free') { startRun('free', G.seed, G.lastRun || null); C.ui.toast('Samma tunnel igen – spöket är ditt förra lopp.', 1600); return; }
+  startGame(G.mode);
+}
+function goMenu() { G.screen = 'menu'; C.ui.hideAll(); C.ui.show('menu'); updateBest(); }
+function updateBest() { const b = S.get('best', 0), d = S.get('daily.' + C.todayStr(), 0); C.ui.setText('bestLine', (b ? 'Bästa: ' + b : 'Inget rekord än') + (d ? ' · Dagens: ' + d : '')); }
+function encodeGhost(run) { let last = 0; return run.flips.map(f => { const v = (f - last).toString(36); last = f; return v; }).join('.') + '~' + run.dist.toString(36); }
+function decodeGhost(str) { try { const [fl, ds] = str.split('~'); let acc = 0; const flips = fl ? fl.split('.').map(v => { acc += parseInt(v, 36); return acc; }) : []; return { flips, dist: parseInt(ds, 36) || 0 }; } catch (e) { return null; } }
+function share() { const run = G.lastRun || { flips: G.flips, dist: Math.round(G.d) }; const url = location.href.split('#')[0] + '#s=' + encodeURIComponent(G.seed) + '&t=' + G.score + '&g=' + encodeGhost(run); C.share({ text: 'TUNNELBANAN 🚇 ' + G.score + ' p, ' + Math.round(G.d / 10) + ' m. Spring mot mitt spöke:', url, linkboxId: 'linkbox' }); }
+
+function drawRunner(ctx, x, y, side, alpha, color, cap) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); if (side === 1) ctx.scale(1, -1);
+  const run = Math.sin(g.t * 18) * 6;
+  ctx.strokeStyle = color; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-4, -18); ctx.lineTo(-10 - run, 0); ctx.moveTo(4, -18); ctx.lineTo(10 + run, 0); ctx.stroke();
+  C.rrect(ctx, -10, -44, 20, 28, 6); ctx.fillStyle = color; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(8, -36); ctx.lineTo(18 + run * 0.5, -26); ctx.stroke();
+  ctx.fillStyle = '#5A3A1B'; ctx.fillRect(14, -30, 12, 10);
+  ctx.beginPath(); ctx.arc(0, -54, 10, 0, Math.PI * 2); ctx.fillStyle = '#F5C6A0'; ctx.fill();
+  if (cap) { ctx.fillStyle = '#1E2A40'; ctx.fillRect(-11, -66, 22, 8); ctx.fillRect(-2, -66, 16, 3); }
+  ctx.restore();
+}
+function render(ctx) {
+  const W = g.W, H = g.H;
+  ctx.save(); g.fx.applyShake(ctx);
+  ctx.fillStyle = '#0E1626'; ctx.fillRect(0, 0, W, H);
+  if (G.screen !== 'menu') {
+    const fy = floorY(), cy = ceilY();
+    // tunnel walls
+    ctx.fillStyle = '#16233A'; ctx.fillRect(0, 0, W, cy); ctx.fillRect(0, fy, W, H - fy);
+    const off = -(G.d % 80);
+    ctx.fillStyle = '#1E2E4A';
+    for (let x = off; x < W; x += 80) { ctx.fillRect(x, cy - 30, 40, 30); ctx.fillRect(x + 40, fy, 40, 30); }
+    ctx.fillStyle = '#26365A'; ctx.fillRect(0, cy - 4, W, 4); ctx.fillRect(0, fy, W, 4);
+    // rails
+    ctx.fillStyle = '#4A5A7A'; ctx.fillRect(0, fy + 14, W, 3); ctx.fillRect(0, fy + 24, W, 3);
+    // lamps
+    const loff = -(G.d % 260);
+    for (let x = loff; x < W + 40; x += 260) { ctx.fillStyle = '#FFE9A8'; ctx.fillRect(x, cy - 2, 40, 6); ctx.save(); ctx.globalAlpha = 0.08; ctx.fillStyle = '#FFE9A8'; ctx.beginPath(); ctx.moveTo(x - 30, cy + 4); ctx.lineTo(x + 70, cy + 4); ctx.lineTo(x + 130, fy); ctx.lineTo(x - 90, fy); ctx.fill(); ctx.restore(); }
+    // items
+    const k0 = Math.floor((G.d - 100) / SEG), k1 = Math.floor((G.d + W + 100) / SEG);
+    for (let k = Math.max(0, k0); k <= k1; k++) for (const it of segAt(k)) {
+      if (it.dead) continue;
+      const sx = it.x - G.d + PX, base = it.side === 0 ? fy : cy;
+      if (it.kind === 'coin') { ctx.fillStyle = '#FFD166'; ctx.beginPath(); ctx.arc(sx + 9, base + (it.side === 0 ? -14 : 14), 8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#B8860B'; ctx.fillRect(sx + 7, base + (it.side === 0 ? -19 : 9), 4, 10); continue; }
+      if (it.kind === 'train') {
+        const y = it.side === 0 ? fy - it.h : cy;
+        C.rrect(ctx, sx, y, it.w, it.h, 10); ctx.fillStyle = '#2F6FE0'; ctx.fill(); ctx.fillStyle = '#F2F5F7';
+        for (let wx = sx + 16; wx < sx + it.w - 20; wx += 44) ctx.fillRect(wx, y + 14, 28, 22);
+        ctx.fillStyle = '#FFE9A8'; ctx.beginPath(); ctx.arc(sx + 6, y + it.h / 2, 7, 0, Math.PI * 2); ctx.fill();
+        C.text(ctx, 'T', sx + it.w - 22, y + it.h / 2, 22, '#F2F5F7'); continue;
+      }
+      C.emoji(ctx, it.e, sx + it.w / 2, base + (it.side === 0 ? -it.h / 2 : it.h / 2), it.h);
+    }
+    // ghost
+    if (G.ghost && !G.ghostDead) { const gy = G.ghostFlip ? C.lerp(G.ghostFlip.from, G.ghostFlip.to, C.easeInOut(G.ghostFlip.t)) : sideY(G.ghostSide); drawRunner(ctx, PX - 34, gy, G.ghostSide, 0.35, '#9FB0C3', false); C.text(ctx, 'SPÖKE', PX - 34, gy + (G.ghostSide === 0 ? 16 : -16), 10, '#9FB0C3', 'center', C.F.ui, false); }
+    // conductor
+    const cx = PX - 60 - G.lives * 30; drawRunner(ctx, cx, G.side === 0 ? fy : cy, G.side, 0.9, '#1E2A40', true);
+    C.text(ctx, '😠', cx, (G.side === 0 ? fy : cy) + (G.side === 0 ? -80 : 80), 16, '#F2F5F7', 'center', C.F.emoji, false);
+    // player
+    const blink = G.inv > 0 && Math.floor(g.t * 20) % 2 === 0;
+    if (!blink) { if (G.dash > 0) { for (let n = 1; n <= 3; n++) drawRunner(ctx, PX - n * 14, G.y, G.side, 0.25 - n * 0.06, '#FF6B35', false); } drawRunner(ctx, PX, G.y, G.side, 1, G.dash > 0 ? '#FF6B35' : '#FFD166', false); }
+    // HUD
+    C.text(ctx, String(G.score), W / 2, 30, 34, '#F2F5F7');
+    C.text(ctx, Math.round(G.d / 10) + ' m · ' + G.coins + ' mynt', W / 2, 56, 12, '#9FB0C3', 'center', C.F.ui);
+    C.text(ctx, '♥'.repeat(Math.max(0, G.lives)) + '♡'.repeat(Math.max(0, 3 - G.lives)), 16, 26, 22, '#FF6B35', 'left');
+    if (G.mode === 'duel') C.text(ctx, 'SPELARE ' + (G.duel.turn + 1), W - 16, 26, 16, G.duel.turn === 0 ? '#FFD166' : '#9AD0F5', 'right');
+    else if (G.mode === 'challenge') C.text(ctx, 'ATT SLÅ ' + G.challengeScore, W - 16, 26, 14, '#9FB0C3', 'right', C.F.ui);
+    // dash bar
+    const q = G.dashCd > 0 ? 1 - G.dashCd / DASH_CD : 1;
+    C.rrect(ctx, W - 116, 44, 100, 8, 4); ctx.fillStyle = 'rgba(255,255,255,.15)'; ctx.fill(); C.rrect(ctx, W - 116, 44, 100 * q, 8, 4); ctx.fillStyle = q >= 1 ? '#FF6B35' : '#9FB0C3'; ctx.fill();
+    C.text(ctx, 'RUSA ⇢', W - 66, 62, 10, '#9FB0C3', 'center', C.F.ui, false);
+    C.text(ctx, 'MENY', 16, H - 20, 12, '#5A6A80', 'left', C.F.ui, false);
+  }
+  g.fx.draw(ctx);
+  ctx.restore();
+}
+function onTap(x, y) {
+  if (G.screen === 'play') { if (x < 70 && y > g.H - 40) { goMenu(); return; } if (!G.anim) flipTo(1 - G.side); }
+  else if (G.screen === 'over' && performance.now() > G.overReadyAt) restart();
+}
+function onSwipe(dir) {
+  if (G.screen !== 'play' || G.anim) return;
+  if (dir === 'up') flipTo(1); else if (dir === 'down') flipTo(0); else if (dir === 'right') dash();
+}
+const g = C.mount({ ariaLabel: 'Tunnelbanan spelplan', onTap, onSwipe, update, render, onKey: k => { if (k === 'Escape') { goMenu(); return true; } if ((k === ' ' || k === 'Enter') && G.screen === 'menu') { startGame(G.challengeSeed ? 'challenge' : 'free'); return true; } return false; } });
+function refreshToggles() { C.ui.setText('bHap', 'Vibration: ' + (C.haptics.on ? 'på' : 'av')); C.ui.setText('bSnd', 'Ljud: ' + (C.audio.on ? 'på' : 'av')); }
+const h = C.hash();
+if (h.get('s')) { G.challengeSeed = h.get('s'); G.challengeScore = parseInt(h.get('t') || '0', 10) || 0; G.challengeGhost = h.get('g') ? decodeGhost(h.get('g')) : null; $('challengeLine').hidden = false; C.ui.setText('challengeLine', 'Utmaning från en vän: slå ' + G.challengeScore + ' p i exakt samma tunnel' + (G.challengeGhost ? ', med vännens spöke bredvid dig' : '') + '. SPRING startar utmaningen.'); C.ui.setText('bPlay', 'TA UTMANINGEN'); }
+C.ui.bind('bPlay', () => startGame(G.challengeSeed ? 'challenge' : 'free'));
+C.ui.bind('bDaily', () => startGame('daily'));
+C.ui.bind('bDuel', () => startGame('duel'));
+C.ui.bind('bHap', () => { C.haptics.on = !C.haptics.on; S.set('haptics', C.haptics.on); refreshToggles(); C.haptics.medium(); });
+C.ui.bind('bSnd', () => { C.audio.on = !C.audio.on; S.set('sound', C.audio.on); refreshToggles(); C.audio.blip(1); });
+C.ui.bind('bAgain', restart); C.ui.bind('bNextPlayer', restart); C.ui.bind('bShare', share); C.ui.bind('bMenu', goMenu);
+C.ui.overlayTap('over', () => { if (performance.now() > G.overReadyAt && !(G.mode === 'duel' && G.duel.turn === 0)) restart(); });
+refreshToggles(); updateBest();
+const boot = () => g.start();
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(boot); else boot();
+})();
+</script>
+</body>
+</html>
